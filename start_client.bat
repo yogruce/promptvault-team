@@ -19,7 +19,12 @@ powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7862 -ErrorActio
 
 echo Calisan Kasasi: http://127.0.0.1:7862
 echo Tarayici aciliyor...
+echo [BILGI] Tarayici kapatildiginda bu pencere otomatik olarak kapanacaktir.
 echo.
 
 .venv\Scripts\python.exe -m promptvault_team --role client --port 7862 --open
-pause
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo [HATA] Bir sorun olustu, hata detaylari yukaridadir.
+    pause
+)

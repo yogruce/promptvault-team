@@ -1637,7 +1637,22 @@
       o.addEventListener('click', (e) => { if (e.target === o) o.classList.remove('open'); });
     });
 
+    // Auto-close terminal when browser closes
+    function initBrowserWatcher() {
+      setInterval(() => {
+        fetch('/api/system/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
+      }, 2000);
+
+      window.addEventListener('pagehide', () => {
+        navigator.sendBeacon('/api/system/shutdown');
+      });
+      window.addEventListener('beforeunload', () => {
+        navigator.sendBeacon('/api/system/shutdown');
+      });
+    }
+
     // Startup
+    initBrowserWatcher();
     checkAppMode();
     initAuth();
     loadVault();

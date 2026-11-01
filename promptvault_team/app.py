@@ -21,6 +21,10 @@ from .gdrive_service import CorporateGDriveSync
 
 
 def create_team_app(data_dir: str | Path | None = None, mode: str = "admin") -> FastAPI:
+    import os
+    import time
+    import threading
+
     lib = TeamLibrary(data_dir=data_dir, mode=mode)
     gdrive_sync = CorporateGDriveSync(lib=lib)
     static_dir = Path(__file__).resolve().parent / "static"
@@ -36,6 +40,38 @@ def create_team_app(data_dir: str | Path | None = None, mode: str = "admin") -> 
         description="Team-wide AI Prompt & Visual Vault with Real Auth, ChatGPT, Gemini, Claude and Drive Sync.",
         lifespan=lifespan,
     )
+
+    # Browser auto-close watcher state
+    app.state.last_heartbeat = time.time()
+    app.state.has_connected = False
+    app.state.shutdown_requested = False
+
+    def _auto_close_watcher():
+        time.sleep(12)
+        while True:
+            time.sleep(1)
+            if app.state.has_connected:
+                elapsed = time.time() - app.state.last_heartbeat
+                if app.state.shutdown_requested and elapsed > 1.5:
+                    print("\n[BİLGİ] Tarayıcı kapatıldı, terminal sonlandırılıyor...")
+                    os._exit(0)
+                elif elapsed > 6.0:
+                    print("\n[BİLGİ] Tarayıcı bağlantısı kesildi (zaman aşımı), terminal sonlandırılıyor...")
+                    os._exit(0)
+
+    threading.Thread(target=_auto_close_watcher, daemon=True, name="AutoCloseWatcher").start()
+
+    @app.post("/api/system/heartbeat")
+    def heartbeat():
+        app.state.last_heartbeat = time.time()
+        app.state.has_connected = True
+        app.state.shutdown_requested = False
+        return {"status": "alive"}
+
+    @app.post("/api/system/shutdown")
+    def shutdown_signal():
+        app.state.shutdown_requested = True
+        return {"status": "shutting_down"}
 
     # Enable CORS
     app.add_middleware(
