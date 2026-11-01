@@ -1,0 +1,25 @@
+@echo off
+title PromptVault Team - Yonetici (Admin)
+cd /d "%~dp0"
+
+echo ========================================================
+echo   PromptVault Team - YONETICI (ADMIN) SURUMU
+echo   Gems, Custom GPTs, Skills ^& Kurumsal Drive Yonetimi
+echo ========================================================
+echo.
+
+if not exist .venv\Scripts\python.exe (
+    echo [BILGI] Ilk kurulum yapiliyor, sanal ortam olusturuluyor...
+    python -m venv .venv
+    .venv\Scripts\pip install -e .
+)
+
+:: 7861 portunu tutan eski sureci sonlandir
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7861 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+
+echo Yonetici Paneli: http://127.0.0.1:7861
+echo Tarayici aciliyor...
+echo.
+
+.venv\Scripts\python.exe -m promptvault_team --role admin --port 7861 --open
+pause

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "promptvault-team"
+version = "2.0.0"
+description = "PromptVault Team Edition - ChatGPT, Gemini, Claude, Gems & Google Workspace Shared Drive Sync"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "pillow>=10.0.0",
+    "python-multipart>=0.0.7",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth-httplib2>=0.2.0"
+]
+
+[project.scripts]
+promptvault-team = "promptvault_team.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["promptvault_team*"]
+
+[tool.setuptools.package-data]
+"promptvault_team" = ["static/*", "static/**/*"]
