@@ -234,7 +234,7 @@ class TeamLibrary:
         self.vault_thumbs_dir = self.data_dir / "media" / "thumbs"
         self.vault_thumbs_dir.mkdir(parents=True, exist_ok=True)
 
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._sync_listeners: list[Callable[[str, int, str], None]] = []
         self._init_db()
 
@@ -506,6 +506,8 @@ class TeamLibrary:
         email = email.strip().lower()
         name = name.strip() or email.split("@")[0]
         domain = email.split("@")[-1] if "@" in email else ""
+        now = datetime.now(timezone.utc).isoformat()
+        session_token = secrets.token_urlsafe(32)
 
         with self._lock, self._get_conn() as conn:
             # 1. Is this user already registered?
@@ -520,25 +522,33 @@ class TeamLibrary:
                     "role": row["role"],
                     "workspace_id": row["workspace_id"],
                 }
-                token = self.create_session(user_id)
-                return {"token": token, "user": user_data}
+                conn.execute(
+                    "INSERT INTO user_sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+                    (session_token, user_id, now),
+                )
+                return {"token": session_token, "user": user_data}
 
             # 2. Check permissions based on Mode
             c2 = conn.execute("SELECT COUNT(*) FROM users")
             user_count = c2.fetchone()[0]
 
+            # Read company policy directly
+            pol_row = conn.execute("SELECT * FROM company_policy WHERE id = 1").fetchone()
+            allowed_domains = json.loads(pol_row["allowed_domains_json"] or "[]") if pol_row else []
+            default_role = pol_row["default_role"] if pol_row and pol_row["default_role"] else "editor"
+            allow_all_domain_users = bool(pol_row["allow_all_domain_users"]) if pol_row else True
+
+            p_cur = conn.execute("SELECT role FROM member_permissions WHERE email = ?", (email,))
+            p_row = p_cur.fetchone()
+
             if self.mode == "client":
                 # CLIENT MODE: Never grant admin automatically
-                p_cur = conn.execute("SELECT role FROM member_permissions WHERE email = ?", (email,))
-                p_row = p_cur.fetchone()
-                policy = self.get_company_policy()
-                allowed_domains = policy.get("allowed_domains", [])
-                allow_all_domain_users = policy.get("allow_all_domain_users", True)
-
                 if p_row:
                     role = p_row["role"]
                 elif allowed_domains and domain in allowed_domains and allow_all_domain_users:
-                    role = policy.get("default_role", "editor")
+                    role = default_role
+                elif not allowed_domains:
+                    role = default_role or "editor"
                 else:
                     domains_str = ", ".join([f"@{d}" for d in allowed_domains]) if allowed_domains else "tanımlanmış şirket domaini"
                     raise PermissionError(
@@ -549,25 +559,19 @@ class TeamLibrary:
                 # ADMIN MODE
                 if user_count == 0:
                     role = "admin"
-                    if domain:
-                        pol = self.get_company_policy()
-                        domains = pol["allowed_domains"]
-                        if domain not in domains:
-                            domains.append(domain)
-                            self.update_company_policy(company_name="Şirket Kasası", allowed_domains=domains)
+                    if domain and domain not in allowed_domains:
+                        allowed_domains.append(domain)
+                        conn.execute(
+                            "UPDATE company_policy SET allowed_domains_json = ?, updated_at = ? WHERE id = 1",
+                            (json.dumps(allowed_domains, ensure_ascii=False), now),
+                        )
                 else:
-                    p_cur = conn.execute("SELECT role FROM member_permissions WHERE email = ?", (email,))
-                    p_row = p_cur.fetchone()
-                    policy = self.get_company_policy()
-                    allowed_domains = policy.get("allowed_domains", [])
-                    allow_all_domain_users = policy.get("allow_all_domain_users", True)
-
                     if p_row:
                         role = p_row["role"]
                     elif allowed_domains and domain in allowed_domains and allow_all_domain_users:
-                        role = policy.get("default_role", "editor")
+                        role = default_role
                     elif not allowed_domains:
-                        role = policy.get("default_role", "editor")
+                        role = default_role
                     else:
                         domains_str = ", ".join([f"@{d}" for d in allowed_domains])
                         raise PermissionError(
@@ -578,7 +582,6 @@ class TeamLibrary:
             # Register new authorized user
             salt = secrets.token_hex(16)
             pw_hash = _hash_password(secrets.token_urlsafe(16), salt)
-            now = datetime.now(timezone.utc).isoformat()
 
             cur = conn.execute(
                 """
@@ -595,9 +598,12 @@ class TeamLibrary:
                 "role": role,
                 "workspace_id": 1,
             }
+            conn.execute(
+                "INSERT INTO user_sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+                (session_token, user_id, now),
+            )
 
-        token = self.create_session(user_id)
-        return {"token": token, "user": user_data}
+        return {"token": session_token, "user": user_data}
 
     def register_user(self, email: str, name: str, password: str, role: str = "editor", workspace_id: int | None = 1) -> dict[str, Any]:
         email = email.strip().lower()
@@ -608,22 +614,30 @@ class TeamLibrary:
         if len(password) < 4:
             raise ValueError("Şifre en az 4 karakter olmalıdır.")
 
+        now = datetime.now(timezone.utc).isoformat()
+        session_token = secrets.token_urlsafe(32)
+
         with self._lock, self._get_conn() as conn:
             cur = conn.execute("SELECT COUNT(*) FROM users")
             user_count = cur.fetchone()[0]
 
+            # Read company policy directly
+            pol_row = conn.execute("SELECT * FROM company_policy WHERE id = 1").fetchone()
+            allowed_domains = json.loads(pol_row["allowed_domains_json"] or "[]") if pol_row else []
+            default_role = pol_row["default_role"] if pol_row and pol_row["default_role"] else "editor"
+            allow_all_domain_users = bool(pol_row["allow_all_domain_users"]) if pol_row else True
+
+            p_cur = conn.execute("SELECT role FROM member_permissions WHERE email = ?", (email,))
+            p_row = p_cur.fetchone()
+
             if self.mode == "client":
                 # CLIENT MODE: Never grant admin automatically
-                p_cur = conn.execute("SELECT role FROM member_permissions WHERE email = ?", (email,))
-                p_row = p_cur.fetchone()
-                policy = self.get_company_policy()
-                allowed_domains = policy.get("allowed_domains", [])
-                allow_all_domain_users = policy.get("allow_all_domain_users", True)
-
                 if p_row:
                     role = p_row["role"]
                 elif allowed_domains and domain in allowed_domains and allow_all_domain_users:
-                    role = policy.get("default_role", "editor")
+                    role = default_role
+                elif not allowed_domains:
+                    role = default_role or "editor"
                 else:
                     domains_str = ", ".join([f"@{d}" for d in allowed_domains]) if allowed_domains else "tanımlanmış şirket domaini"
                     raise PermissionError(
@@ -635,14 +649,11 @@ class TeamLibrary:
                 if user_count == 0:
                     role = "admin"  # First user is root Administrator in admin mode
                 else:
-                    p_cur = conn.execute("SELECT role FROM member_permissions WHERE email = ?", (email,))
-                    p_row = p_cur.fetchone()
                     if p_row:
                         role = p_row["role"]
 
             salt = secrets.token_hex(16)
             pw_hash = _hash_password(password, salt)
-            now = datetime.now(timezone.utc).isoformat()
 
             try:
                 cur = conn.execute(
@@ -656,9 +667,13 @@ class TeamLibrary:
             except sqlite3.IntegrityError:
                 raise ValueError("Bu e-posta adresi ile zaten bir hesap kayıtlı.")
 
-        token = self.create_session(user_id)
+            conn.execute(
+                "INSERT INTO user_sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+                (session_token, user_id, now),
+            )
+
         return {
-            "token": token,
+            "token": session_token,
             "user": {
                 "id": user_id,
                 "email": email,

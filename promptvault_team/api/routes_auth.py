@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
@@ -22,10 +23,23 @@ class LoginRequest(BaseModel):
 
 
 class GoogleLoginRequest(BaseModel):
-    email: str
+    email: str = ""
     name: str = ""
     google_id: str = ""
     credential_token: str | None = None
+
+
+def _decode_google_jwt(token: str) -> dict[str, Any]:
+    import base64
+    try:
+        parts = token.strip().split(".")
+        if len(parts) >= 2:
+            padded = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+            data = base64.urlsafe_b64decode(padded.encode("utf-8"))
+            return json.loads(data.decode("utf-8"))
+    except Exception:
+        pass
+    return {}
 
 
 class CompanyPolicyRequest(BaseModel):
@@ -71,14 +85,26 @@ def create_auth_router(lib: TeamLibrary) -> APIRouter:
     @router.post("/google")
     def google_auth(req: GoogleLoginRequest):
         """Sign in or register directly using Google OAuth / SSO."""
-        if not req.email or "@" not in req.email:
-            raise HTTPException(400, "Geçersiz Google hesabı e-posta adresi.")
+        email = req.email.strip().lower() if req.email else ""
+        name = req.name.strip()
+        google_id = req.google_id
+
+        # If credential_token from Google Identity Services is present, decode JWT payload
+        if req.credential_token:
+            payload = _decode_google_jwt(req.credential_token)
+            if payload:
+                email = (payload.get("email") or email).strip().lower()
+                name = payload.get("name") or name or (email.split("@")[0] if "@" in email else "")
+                google_id = payload.get("sub") or google_id
+
+        if not email or "@" not in email:
+            raise HTTPException(400, "Geçersiz veya eksik Google hesabı e-posta adresi.")
 
         try:
             res = lib.login_or_register_google(
-                email=req.email,
-                name=req.name or req.email.split("@")[0],
-                google_id=req.google_id,
+                email=email,
+                name=name or email.split("@")[0],
+                google_id=google_id,
             )
             return {"ok": True, "token": res["token"], "user": res["user"]}
         except PermissionError as e:

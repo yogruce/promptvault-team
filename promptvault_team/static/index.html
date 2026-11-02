@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     :root {
       --bg: #090d16;
@@ -783,7 +784,55 @@
     </div>
   </div>
 
-  <!-- USER PROFILE MODAL -->
+    <!-- GOOGLE AUTH MODAL -->
+  <div class="modal-overlay" id="modal-google-auth">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg width="22" height="22" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.1s.7 5.4 1.9 7.8l3.7-3.1z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 16.6C3.7 20.3 7.5 23 12 23z"/></svg>
+          Google ile Oturum Aç
+        </div>
+        <button class="close-btn" onclick="closeModal('modal-google-auth')">×</button>
+      </div>
+
+      <!-- Google GIS native button container (if client_id exists) -->
+      <div id="google-gis-btn-container" style="display: none; margin-bottom: 16px; justify-content: center;"></div>
+
+      <div id="google-direct-container">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5;">
+          Google Workspace veya Gmail hesabınızla tek tıkla kurumsal kasaya bağlanın:
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">Google E-posta Adresi:</label>
+          <input type="email" id="google-auth-email" class="form-input" placeholder="ornek@sirket.com veya adiniz@gmail.com" onkeydown="if(event.key==='Enter') submitGoogleAuth()">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Adınız Soyadınız (Opsiyonel):</label>
+          <input type="text" id="google-auth-name" class="form-input" placeholder="Örn: Yiğit Can" onkeydown="if(event.key==='Enter') submitGoogleAuth()">
+        </div>
+
+        <button class="btn btn-primary" style="width: 100%; justify-content: center; gap: 8px; margin-top: 10px; font-weight: 600;" onclick="submitGoogleAuth()">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.1s.7 5.4 1.9 7.8l3.7-3.1z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 16.6C3.7 20.3 7.5 23 12 23z"/></svg>
+          Google ile Doğrula ve Giriş Yap
+        </button>
+
+        <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid #1e293b;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11.5px; color: var(--text-muted);">Tek tıkla Google Popup'ı:</span>
+            <a href="#" style="font-size: 11.5px; color: var(--primary); font-weight: 600;" onclick="toggleGoogleClientIdConfig()">⚙️ Client ID Yapılandır</a>
+          </div>
+          <div id="google-client-id-box" style="display: none; margin-top: 10px;">
+            <input type="text" id="google-client-id-input" class="form-input" placeholder="xxxxx.apps.googleusercontent.com" style="font-size: 12px;">
+            <button class="btn btn-secondary" style="width: 100%; margin-top: 6px; font-size: 12px; justify-content: center;" onclick="saveGoogleClientId()">Kaydet ve Google Butonunu Aç</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- USER PROFILE MODAL -->
   <div class="modal-overlay" id="modal-profile">
     <div class="modal-card" style="max-width: 440px;">
       <div class="modal-header">
@@ -1305,11 +1354,105 @@
       }
     }
 
-    async function handleGoogleSignIn() {
-      const email = prompt('Google Hesabınızın E-posta Adresi (ör: adiniz@gmail.com veya sirket.com):');
-      if (!email || !email.includes('@')) return;
-      const name = prompt('Görünecek Adınız Soyadınız (Opsiyonel):') || email.split('@')[0];
+    function handleGoogleSignIn() {
+      closeModal('modal-auth');
+      openModal('modal-google-auth');
+      setTimeout(() => {
+        const inp = document.getElementById('google-auth-email');
+        if (inp) inp.focus();
+      }, 100);
+      initGoogleGIS();
+    }
 
+    function initGoogleGIS() {
+      const clientId = localStorage.getItem('pv_google_client_id');
+      if (clientId && window.google && window.google.accounts && window.google.accounts.id) {
+        try {
+          google.accounts.id.initialize({
+            client_id: clientId,
+            callback: handleGoogleCredentialResponse,
+          });
+          const btnContainer = document.getElementById('google-gis-btn-container');
+          if (btnContainer) {
+            btnContainer.style.display = 'flex';
+            btnContainer.innerHTML = '';
+            google.accounts.id.renderButton(btnContainer, {
+              theme: 'filled_blue',
+              size: 'large',
+              text: 'continue_with',
+              shape: 'pill',
+              width: 320
+            });
+          }
+        } catch (e) {
+          console.warn('Google GIS init warning:', e);
+        }
+      }
+    }
+
+    function toggleGoogleClientIdConfig() {
+      const box = document.getElementById('google-client-id-box');
+      if (box) {
+        box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
+        const inp = document.getElementById('google-client-id-input');
+        if (inp) inp.value = localStorage.getItem('pv_google_client_id') || '';
+      }
+    }
+
+    function saveGoogleClientId() {
+      const inp = document.getElementById('google-client-id-input');
+      const val = (inp ? inp.value : '').trim();
+      if (!val) {
+        localStorage.removeItem('pv_google_client_id');
+        showToast('Google Client ID kaldırıldı.');
+        const btnContainer = document.getElementById('google-gis-btn-container');
+        if (btnContainer) btnContainer.style.display = 'none';
+      } else {
+        localStorage.setItem('pv_google_client_id', val);
+        showToast('Google Client ID kaydedildi!');
+        initGoogleGIS();
+      }
+      toggleGoogleClientIdConfig();
+    }
+
+    async function handleGoogleCredentialResponse(response) {
+      if (!response || !response.credential) return;
+      showToast('🌐 Google oturumu doğrulanıyor...');
+      try {
+        const res = await fetch('/api/team/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential_token: response.credential })
+        });
+        const d = await res.json();
+        if (res.ok && d.token) {
+          localStorage.setItem('pv_token', d.token);
+          authToken = d.token;
+          currentUser = d.user;
+          renderLoggedIn();
+          closeModal('modal-google-auth');
+          showToast(`✅ Hoş geldiniz, ${currentUser.name}! (Rol: ${currentUser.role})`);
+          loadVault();
+        } else {
+          alert(d.detail || 'Google girişi başarısız.');
+        }
+      } catch (e) {
+        alert('Sunucu hatası: ' + e);
+      }
+    }
+
+    async function submitGoogleAuth() {
+      const emailInp = document.getElementById('google-auth-email');
+      const nameInp = document.getElementById('google-auth-name');
+      const email = (emailInp ? emailInp.value : '').trim();
+      const name = (nameInp ? nameInp.value : '').trim();
+
+      if (!email || !email.includes('@')) {
+        alert('Lütfen geçerli bir Google e-posta adresi giriniz.');
+        return;
+      }
+
+      showToast('🌐 Google oturumu başlatılıyor...');
       try {
         const res = await fetch('/api/team/auth/google', {
           method: 'POST',
@@ -1317,12 +1460,13 @@
           body: JSON.stringify({ email, name })
         });
         const d = await res.json();
-        if (res.ok) {
+        if (res.ok && d.token) {
           localStorage.setItem('pv_token', d.token);
+          authToken = d.token;
           currentUser = d.user;
           renderLoggedIn();
-          closeModal('modal-auth');
-          showToast(`🌐 Google ile giriş yapıldı! Rol: ${currentUser.role}`);
+          closeModal('modal-google-auth');
+          showToast(`✅ Google ile giriş yapıldı! Rol: ${currentUser.role}`);
           loadVault();
         } else {
           alert(d.detail || 'Google girişi başarısız.');

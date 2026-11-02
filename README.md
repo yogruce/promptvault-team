@@ -170,10 +170,13 @@ PVTEAM_eyJzaGFyZWRfZHJpdmVfaWQiOiAiMEFCY0RlRjEy...
 Geleneksel lokal uygulamalarda her çalışan kendi bilgisayarında sunucu başlattığında sistem onu yerel yönetici sanabilir. PromptVault Team mimarisinde bu açık kökten engellenmiştir:
 
 1. **Client Modu Kısıtlaması:** `start_client.bat` ile çalışan uygulamada sistem asla Admin yetkisi tahsis etmez.
-2. **Kurumsal Alan Adı Koruması (Domain Whitelist):**
+2. **Google ile Kolay ve Güvenli Giriş:**
+   - **Doğrudan Giriş:** "Google ile Oturum Aç" butonuna tıklayarak kurumsal Google Workspace (`@sirket.com`) veya kişisel Gmail hesabınızı girip tek tıkla anında oturum açabilirsiniz.
+   - **Google Identity Services (GIS) / OAuth 2.0:** İsteğe bağlı olarak Google Cloud Console'dan bir Web Client ID eklediğinizde yerel Google Popup butonu otomatik aktifleşir ve Google JWT ID Token ile doğrulanır.
+3. **Kurumsal Alan Adı Koruması (Domain Whitelist):**
    - Yönetici panelinden şirketin resmi domaini tanımlanır (Örn: `@sirketiniz.com` veya `@ajans.io`).
-   - Bu domain dışında hiçbir e-posta adresi ile kayıt veya oturum açılamaz.
-3. **Merkezi E-Posta İzin Listesi (Member Whitelist):**
+   - Bu domain dışında hiçbir e-posta adresi ile kayıt veya yetkisiz oturum açılamaz.
+4. **Merkezi E-Posta İzin Listesi (Member Whitelist):**
    - Yönetici, sisteme dahil olacak ekip üyelerinin e-posta adreslerini ve yetki düzeylerini Admin panelinden önceden kaydeder.
    - Çalışan Google ile oturum açtığında, yetkisi doğrudan bu merkezi politikaya göre atanır.
 
@@ -228,10 +231,8 @@ promptvault-team/
 │   │   ├── routes_prompts.py   # Prompt CRUD, arama, filtreleme
 │   │   ├── routes_entities.py  # Gems, Custom GPTs, Claude Skills API
 │   │   └── routes_execution.py # API çalıştırma ve önizleme motoru
-│   ├── static/                 # Modern Tek Sayfa Web Arayüzü (HTML/CSS/JS)
-│   │   ├── index.html          # Ana UI, RBAC, Gallery & Editor
-│   │   ├── style.css           # Kurumsal koyu tema & responsive tasarım
-│   │   └── app.js              # State yönetimi, Google SSO & Heartbeat
+│   ├── static/                 # Modern Tek Sayfa Web Arayüzü
+│   │   └── index.html          # Ana UI, RBAC, Gallery & Visual Vault (SPA)
 │   ├── app.py                  # FastAPI uygulama fabrikası ve Heartbeat servisi
 │   ├── db.py                   # Yerel ACID veritabanı motoru & listener altyapısı
 │   ├── gdrive_service.py       # Google Cloud Drive API v3 gerçek zamanlı senkronizasyon
