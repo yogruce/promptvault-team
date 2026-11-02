@@ -515,10 +515,14 @@ class TeamLibrary:
             row = cur.fetchone()
             if row:
                 user_id = row["id"]
+                user_name = row["name"]
+                if name and name != user_name:
+                    conn.execute("UPDATE users SET name = ?, updated_at = ? WHERE id = ?", (name, now, user_id))
+                    user_name = name
                 user_data = {
                     "id": user_id,
                     "email": row["email"],
-                    "name": row["name"],
+                    "name": user_name,
                     "role": row["role"],
                     "workspace_id": row["workspace_id"],
                 }
@@ -648,9 +652,25 @@ class TeamLibrary:
                 # ADMIN MODE
                 if user_count == 0:
                     role = "admin"  # First user is root Administrator in admin mode
+                    if domain and domain not in allowed_domains:
+                        allowed_domains.append(domain)
+                        conn.execute(
+                            "UPDATE company_policy SET allowed_domains_json = ?, updated_at = ? WHERE id = 1",
+                            (json.dumps(allowed_domains, ensure_ascii=False), now),
+                        )
                 else:
                     if p_row:
                         role = p_row["role"]
+                    elif allowed_domains and domain in allowed_domains and allow_all_domain_users:
+                        role = default_role
+                    elif not allowed_domains:
+                        role = default_role or "editor"
+                    else:
+                        domains_str = ", ".join([f"@{d}" for d in allowed_domains])
+                        raise PermissionError(
+                            f"Erişim Reddedildi: Bu kasa yalnızca şirket çalışanlarına açıktır ({domains_str}). "
+                            f"'{email}' hesabı onaylı listede bulunamadı."
+                        )
 
             salt = secrets.token_hex(16)
             pw_hash = _hash_password(password, salt)

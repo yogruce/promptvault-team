@@ -33,6 +33,8 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1", help="Sunucu host adresi")
     parser.add_argument("--open", action="store_true", help="Tarayıcıda otomatik aç")
     parser.add_argument("--data-dir", default=None, help="Özel veritabanı dizini")
+    parser.add_argument("--auto-close", dest="auto_close", action="store_true", default=True, help="Tarayıcı kapandığında terminali otomatik kapat")
+    parser.add_argument("--no-auto-close", dest="auto_close", action="store_false", help="Tarayıcı kapansa bile sunucuyu açık tut")
 
     args = parser.parse_args()
 
@@ -60,7 +62,7 @@ def main() -> int:
 
         threading.Thread(target=_delayed_open, daemon=True).start()
 
-    app = create_team_app(data_dir=args.data_dir, mode=args.role)
+    app = create_team_app(data_dir=args.data_dir, mode=args.role, auto_close=args.auto_close)
     try:
         uvicorn.run(app, host=args.host, port=port, log_level="warning")
     except OSError as e:

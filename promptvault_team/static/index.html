@@ -762,7 +762,18 @@
         </p>
       </div>
 
-      <div id="auth-form-register" style="display: none;">
+            <div id="auth-form-register" style="display: none;">
+        <!-- GOOGLE SIGN UP BUTTON -->
+        <button class="btn btn-secondary" style="width: 100%; justify-content: center; gap: 10px; margin-bottom: 16px; background: #1e293b; border-color: #3b4d6e; font-weight: 600;" onclick="handleGoogleSignIn()">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.1s.7 5.4 1.9 7.8l3.7-3.1z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2-6.4-4.8L1.9 16.6C3.7 20.3 7.5 23 12 23z"/></svg>
+          Google ile Hızlı Kayıt Ol
+        </button>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+          <div style="flex: 1; height: 1px; background: #2d3748;"></div>
+          <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">VEYA ŞİFRE İLE</span>
+          <div style="flex: 1; height: 1px; background: #2d3748;"></div>
+        </div>
         <div class="form-group">
           <label class="form-label">Adınız Soyadınız:</label>
           <input type="text" id="reg-name" class="form-input" placeholder="Örn: Yiğit Can">
@@ -1001,11 +1012,10 @@
     let entitiesData = [];
     let currentUser = null;
     let selectedDetailItem = null;
+    let selectedGemPlatform = 'all';
 
-    const authToken = localStorage.getItem('pv_token') || '';
+    let authToken = localStorage.getItem('pv_token') || '';
 
-    // Auth Initialization
-    async 
     // APP MODE & POLICY MANAGEMENT
     window.APP_MODE = 'admin';
 
@@ -1014,7 +1024,7 @@
         const res = await fetch('/api/team/auth/app-mode');
         const data = await res.json();
         window.APP_MODE = data.mode || 'admin';
-        
+
         const modeBadge = document.getElementById('header-mode-badge');
         if (modeBadge) {
           modeBadge.textContent = window.APP_MODE.toUpperCase();
@@ -1057,14 +1067,17 @@
       if (!currentUser || currentUser.role !== 'admin') return;
       try {
         const res = await fetch('/api/team/auth/company/policy', {
-          headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('pv_token') || '') }
+          headers: { 'Authorization': 'Bearer ' + (authToken || localStorage.getItem('pv_token') || '') }
         });
         const d = await res.json();
         if (res.ok) {
           const pol = d.policy || {};
-          document.getElementById('pol-company-name').value = pol.company_name || 'Şirket Kasası';
-          document.getElementById('pol-allowed-domains').value = (pol.allowed_domains || []).join(', ');
-          document.getElementById('pol-default-role').value = pol.default_role || 'editor';
+          const compNameEl = document.getElementById('pol-company-name');
+          if (compNameEl) compNameEl.value = pol.company_name || 'Şirket Kasası';
+          const domsEl = document.getElementById('pol-allowed-domains');
+          if (domsEl) domsEl.value = (pol.allowed_domains || []).join(', ');
+          const defRoleEl = document.getElementById('pol-default-role');
+          if (defRoleEl) defRoleEl.value = pol.default_role || 'editor';
 
           renderMemberPermissions(d.members || []);
         }
@@ -1077,7 +1090,8 @@
         const t_res = await fetch('/api/team/gdrive/connect-token');
         const t_data = await t_res.json();
         if (t_data.token) {
-          document.getElementById('pol-connect-token-box').value = t_data.token;
+          const tokBox = document.getElementById('pol-connect-token-box');
+          if (tokBox) tokBox.value = t_data.token;
         }
       } catch (e) {}
     }
@@ -1116,7 +1130,7 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + (localStorage.getItem('pv_token') || '')
+            'Authorization': 'Bearer ' + (authToken || localStorage.getItem('pv_token') || '')
           },
           body: JSON.stringify({ company_name, allowed_domains, default_role, allow_all_domain_users: true })
         });
@@ -1142,7 +1156,7 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + (localStorage.getItem('pv_token') || '')
+            'Authorization': 'Bearer ' + (authToken || localStorage.getItem('pv_token') || '')
           },
           body: JSON.stringify({ email, role })
         });
@@ -1164,7 +1178,7 @@
       try {
         const res = await fetch(`/api/team/auth/company/members/${encodeURIComponent(email)}`, {
           method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('pv_token') || '') }
+          headers: { 'Authorization': 'Bearer ' + (authToken || localStorage.getItem('pv_token') || '') }
         });
         if (res.ok) {
           showToast(`Üye yetkisi kaldırıldı: ${email}`);
@@ -1200,8 +1214,8 @@
         if (res.ok) {
           showToast(`🎉 '${d.company_name}' kasasına başarıyla bağlanıldı ve eşitlendi!`);
           loadVault();
-          loadGems();
-          checkDriveStatus();
+          loadEntities();
+          loadDriveStatus();
         } else {
           alert(d.detail || 'Bağlantı başarısız.');
         }
@@ -1218,8 +1232,9 @@
         if (res.ok) {
           showToast(`✅ Eşitleme tamamlandı! (${d.synced_prompts || 0} prompt, ${d.synced_entities || 0} gem güncellendi)`);
           loadVault();
-          loadGems();
+          loadEntities();
           if (currentUser && currentUser.role === 'admin') loadCompanyPolicy();
+          loadDriveStatus();
         } else {
           alert(d.detail || 'Drive senkronizasyonu başarısız.');
         }
@@ -1243,6 +1258,7 @@
           renderLoggedIn();
         } else {
           localStorage.removeItem('pv_token');
+          authToken = '';
           renderLoggedOut();
         }
       } catch (e) {
@@ -1251,19 +1267,21 @@
     }
 
     function renderLoggedIn() {
-      document.getElementById('header-user-avatar').textContent = (currentUser.name[0] || 'U').toUpperCase();
-      document.getElementById('header-user-name').textContent = currentUser.name;
+      document.getElementById('header-user-avatar').textContent = (currentUser && currentUser.name && currentUser.name[0] ? currentUser.name[0] : 'U').toUpperCase();
+      document.getElementById('header-user-name').textContent = currentUser ? currentUser.name : '';
       const roleBadge = document.getElementById('header-user-role');
-      roleBadge.textContent = currentUser.role === 'admin' ? 'YÖNETİCİ' : (currentUser.role === 'editor' ? 'ÇALIŞAN' : 'İZLEYİCİ');
-      roleBadge.className = 'role-badge role-' + currentUser.role;
-      roleBadge.style.display = 'inline-block';
+      if (currentUser && currentUser.role) {
+        roleBadge.textContent = currentUser.role === 'admin' ? 'YÖNETİCİ' : (currentUser.role === 'editor' ? 'ÇALIŞAN' : 'İZLEYİCİ');
+        roleBadge.className = 'role-badge role-' + currentUser.role;
+        roleBadge.style.display = 'inline-block';
+      }
 
       // Admin tabs visibility
       const driveBtn = document.getElementById('nav-btn-drive');
-      if (driveBtn) driveBtn.style.display = (window.APP_MODE === 'admin' && currentUser.role === 'admin') ? 'inline-flex' : (window.APP_MODE === 'client' ? 'inline-flex' : 'none');
+      if (driveBtn) driveBtn.style.display = (window.APP_MODE === 'admin' && currentUser && currentUser.role === 'admin') ? 'inline-flex' : (window.APP_MODE === 'client' ? 'inline-flex' : 'none');
       const polBtn = document.getElementById('nav-btn-policy');
-      if (polBtn) polBtn.style.display = (window.APP_MODE === 'admin' && currentUser.role === 'admin') ? 'inline-flex' : 'none';
-      if (currentUser.role === 'admin') loadCompanyPolicy();
+      if (polBtn) polBtn.style.display = (window.APP_MODE === 'admin' && currentUser && currentUser.role === 'admin') ? 'inline-flex' : 'none';
+      if (currentUser && currentUser.role === 'admin') loadCompanyPolicy();
     }
 
     function renderLoggedOut() {
@@ -1272,7 +1290,9 @@
       document.getElementById('header-user-name').textContent = 'Giriş Yap';
       document.getElementById('header-user-role').style.display = 'none';
       const driveBtn = document.getElementById('nav-btn-drive');
-      if (driveBtn) driveBtn.style.display = 'none';
+      if (driveBtn && window.APP_MODE !== 'client') driveBtn.style.display = 'none';
+      const polBtn = document.getElementById('nav-btn-policy');
+      if (polBtn) polBtn.style.display = 'none';
     }
 
     function handleAuthClick() {
@@ -1313,12 +1333,14 @@
           body: JSON.stringify({ email, password })
         });
         const d = await res.json();
-        if (res.ok) {
+        if (res.ok && d.token) {
           localStorage.setItem('pv_token', d.token);
+          authToken = d.token;
           currentUser = d.user;
           renderLoggedIn();
           closeModal('modal-auth');
           showToast(`Hoş geldiniz, ${currentUser.name}!`);
+          loadVault();
         } else {
           alert(d.detail || 'Giriş başarısız.');
         }
@@ -1340,12 +1362,14 @@
           body: JSON.stringify({ name, email, password })
         });
         const d = await res.json();
-        if (res.ok) {
+        if (res.ok && d.token) {
           localStorage.setItem('pv_token', d.token);
+          authToken = d.token;
           currentUser = d.user;
           renderLoggedIn();
           closeModal('modal-auth');
           showToast(`Hesabınız oluşturuldu! Rol: ${currentUser.role}`);
+          loadVault();
         } else {
           alert(d.detail || 'Kayıt başarısız.');
         }
@@ -1478,6 +1502,8 @@
 
     function logout() {
       localStorage.removeItem('pv_token');
+      authToken = '';
+      currentUser = null;
       renderLoggedOut();
       closeModal('modal-profile');
       showToast('Oturum kapatıldı.');
@@ -1496,21 +1522,27 @@
       if (tabId === 'vault') loadVault();
       if (tabId === 'gems') loadEntities();
       if (tabId === 'drive') loadDriveStatus();
+      if (tabId === 'playground') initPlayground();
+      if (tabId === 'policy') loadCompanyPolicy();
     }
 
     function showToast(msg) {
       const t = document.getElementById('toast');
+      if (!t) return;
       t.textContent = msg;
       t.style.display = 'block';
       setTimeout(() => { t.style.display = 'none'; }, 3000);
     }
 
     // Modal helpers
-    function openModal(id) { document.getElementById(id).classList.add('open'); }
-    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    function openModal(id) { const el = document.getElementById(id); if (el) el.classList.add('open'); }
+    function closeModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
     function openCreateGemModal() { openModal('modal-create-gem'); }
     function openCreatePromptModal() { openModal('modal-create-prompt'); }
-    function openDriveModal() { openModal('modal-drive'); }
+    function openDriveModal() {
+      loadDriveStatus();
+      openModal('modal-drive');
+    }
 
     // Load Visual Vault & Prompts
     async function loadVault() {
@@ -1526,6 +1558,7 @@
 
     function renderVault(list) {
       const grid = document.getElementById('vault-gallery');
+      if (!grid) return;
       if (!list || list.length === 0) {
         grid.innerHTML = `
           <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; background: #111827; border-radius: 16px; border: 1px dashed #2d3748;">
@@ -1544,13 +1577,13 @@
         const dim = (item.image_width && item.image_height) ? `${item.image_width}x${item.image_height}` : '';
 
         return `
-          <div class="vault-item" onclick="openDetailModal(${item.id})">
+          <div class="vault-card" onclick="openDetailModal(${item.id})">
             <div class="vault-thumb-wrap">
               ${hasImg
                 ? `<img src="${thumbUrl}" alt="Thumb" loading="lazy">`
                 : `<div class="vault-text-placeholder">${escapeHtml(item.prompt)}</div>`
               }
-              <span class="thumb-badge badge-${item.platform || 'chatgpt'}">${item.platform}</span>
+              <span class="thumb-badge badge-${item.platform || 'chatgpt'}">${escapeHtml(item.platform || 'chatgpt')}</span>
               ${dim ? `<span class="thumb-dim">${dim}</span>` : ''}
             </div>
             <div class="vault-info">
@@ -1566,17 +1599,16 @@
       }).join('');
     }
 
-    // Open Detail Modal (Orijinal PromptVault gibi)
+    // Open Detail Modal
     function openDetailModal(id) {
       const item = vaultItems.find(p => p.id === id);
       if (!item) return;
       selectedDetailItem = item;
 
       document.getElementById('detail-title').textContent = item.title;
-      document.getElementById('detail-author').textContent = `Ekleyen: ${item.author || 'Ekip'} • ${item.created_at.slice(0, 10)}`;
+      document.getElementById('detail-author').textContent = `Ekleyen: ${item.author || 'Ekip'} • ${(item.created_at || '').slice(0, 10)}`;
       document.getElementById('detail-prompt').textContent = item.prompt;
 
-      const imgBox = document.querySelector('.detail-img-box');
       const imgEl = document.getElementById('detail-img');
       const dlBtn = document.getElementById('detail-download-btn');
 
@@ -1656,29 +1688,34 @@
       }
     });
 
-    // Load Gems
+    // Load System Entities (Gems / GPTs / Claude Skills)
     async function loadEntities() {
       try {
         const res = await fetch('/api/team/entities');
         const data = await res.json();
         entitiesData = data.items || [];
-        renderEntities(entitiesData);
+        filterGems();
       } catch (e) {
-        console.error(e);
+        console.error('Entities load error:', e);
       }
+    }
+
+    function loadGems() {
+      loadEntities();
     }
 
     function renderEntities(list) {
       const grid = document.getElementById('gems-grid');
+      if (!grid) return;
       if (!list || list.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b;">Henüz Gem veya Skill eklenmemiş.</div>';
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b;">Kriterlere uygun Gem veya Skill bulunamadı.</div>';
         return;
       }
       grid.innerHTML = list.map(item => `
         <div class="card">
           <div class="card-header">
             <div class="card-title">${escapeHtml(item.title)}</div>
-            <span class="platform-badge badge-${item.platform}">${item.platform}</span>
+            <span class="platform-badge badge-${item.platform}">${escapeHtml(item.platform)}</span>
           </div>
           <div class="card-body">${escapeHtml(item.template || item.system_instructions)}</div>
           <div class="card-footer">
@@ -1687,6 +1724,25 @@
           </div>
         </div>
       `).join('');
+    }
+
+    function filterGemPlatform(plat) {
+      selectedGemPlatform = plat;
+      document.querySelectorAll('#tab-gems .filter-pills .pill').forEach(p => p.classList.remove('active'));
+      if (event && event.target) event.target.classList.add('active');
+      filterGems();
+    }
+
+    function filterGems() {
+      const q = (document.getElementById('gems-search') || {}).value?.toLowerCase() || '';
+      const filtered = entitiesData.filter(item => {
+        const matchesPlatform = (selectedGemPlatform === 'all') || (item.platform === selectedGemPlatform);
+        const matchesSearch = !q || (item.title || '').toLowerCase().includes(q) ||
+          (item.template || '').toLowerCase().includes(q) ||
+          (item.system_instructions || '').toLowerCase().includes(q);
+        return matchesPlatform && matchesSearch;
+      });
+      renderEntities(filtered);
     }
 
     // Submit New Gem
@@ -1712,6 +1768,9 @@
           closeModal('modal-create-gem');
           showToast('🌟 Gem kasaya eklendi!');
           loadEntities();
+        } else {
+          const d = await res.json();
+          alert(d.detail || 'Gem eklenemedi.');
         }
       } catch (e) { alert(e); }
     }
@@ -1736,14 +1795,198 @@
           closeModal('modal-create-prompt');
           showToast('💬 Prompt kasaya eklendi!');
           loadVault();
+        } else {
+          const d = await res.json();
+          alert(d.detail || 'Prompt eklenemedi.');
         }
       } catch (e) { alert(e); }
+    }
+
+    // Playground implementation
+    async function initPlayground() {
+      if (!entitiesData || entitiesData.length === 0) {
+        await loadEntities();
+      }
+      populatePlaygroundSelect();
+    }
+
+    function populatePlaygroundSelect() {
+      const select = document.getElementById('play-entity-select');
+      if (!select) return;
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">-- Özel Prompt / Doğrudan Giriş --</option>' +
+        entitiesData.map(e => `<option value="${e.id}">[${e.platform.toUpperCase()}] ${escapeHtml(e.title)}</option>`).join('');
+      if (currentVal) select.value = currentVal;
+      onPlaygroundEntityChange();
+    }
+
+    function onPlaygroundEntityChange() {
+      const select = document.getElementById('play-entity-select');
+      const entityId = select && select.value ? parseInt(select.value) : null;
+      const tmplArea = document.getElementById('play-prompt-template');
+
+      let templateText = '';
+      if (entityId) {
+        const entity = entitiesData.find(e => e.id === entityId);
+        if (entity) {
+          templateText = entity.template || entity.system_instructions || '';
+        }
+      }
+
+      if (tmplArea && (entityId || !tmplArea.value)) {
+        tmplArea.value = templateText;
+      }
+
+      renderPlaygroundVariables(tmplArea ? tmplArea.value : templateText);
+    }
+
+    function renderPlaygroundVariables(template) {
+      const varBox = document.getElementById('play-variables-container');
+      if (!varBox) return;
+      const rawMatches = (template || '').match(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g) || [];
+      const variables = [...new Set(rawMatches.map(m => m.replace(/[\{\}\s]/g, '')))];
+
+      if (variables.length === 0) {
+        varBox.innerHTML = '';
+        return;
+      }
+
+      varBox.innerHTML = `
+        <div style="margin: 16px 0; padding: 14px; background: rgba(30, 41, 59, 0.4); border-radius: 10px; border: 1px solid #1e293b;">
+          <div style="font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px;">Şablon Değişkenleri:</div>
+          ${variables.map(v => `
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label class="form-label" style="font-family: monospace;">{{${escapeHtml(v)}}}:</label>
+              <input type="text" class="form-input play-var-input" data-var="${escapeHtml(v)}" placeholder="${escapeHtml(v)} değeri girin">
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    async function testPreviewPayload() {
+      const select = document.getElementById('play-entity-select');
+      const entityId = select && select.value ? parseInt(select.value) : null;
+      const entity = entityId ? entitiesData.find(e => e.id === entityId) : null;
+      const prompt = (document.getElementById('play-prompt-template') || {}).value || '';
+
+      const variables = {};
+      document.querySelectorAll('.play-var-input').forEach(inp => {
+        const k = inp.getAttribute('data-var');
+        if (k) variables[k] = inp.value;
+      });
+
+      const payload = {
+        platform: entity ? entity.platform : 'chatgpt',
+        system_entity_id: entityId,
+        system_instructions: entity ? (entity.system_instructions || '') : '',
+        prompt: prompt,
+        variables: variables,
+        mode: 'chat'
+      };
+
+      try {
+        const res = await fetch('/api/team/execute/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+        const resPre = document.getElementById('play-result-json');
+        if (resPre) {
+          resPre.textContent = JSON.stringify(d.assembled_payload || d, null, 2);
+        }
+        showToast('🚀 API Paketi başarıyla oluşturuldu!');
+      } catch (e) {
+        alert('Önizleme hatası: ' + e);
+      }
+    }
+
+    // Google Drive Status & Config
+    async function loadDriveStatus() {
+      try {
+        const [statusRes, configRes] = await Promise.all([
+          fetch('/api/team/gdrive/status'),
+          fetch('/api/team/gdrive/config')
+        ]);
+        const status = statusRes.ok ? await statusRes.json() : {};
+        const config = configRes.ok ? await configRes.json() : {};
+
+        const connEl = document.getElementById('stat-conn-status');
+        if (connEl) {
+          if (status.is_connected) {
+            connEl.textContent = '🟢 Aktif / Bağlı';
+            connEl.style.color = '#10b981';
+          } else {
+            connEl.textContent = '⚪ Yapılandırılmadı';
+            connEl.style.color = '#94a3b8';
+          }
+        }
+
+        const driveNameEl = document.getElementById('stat-drive-name');
+        if (driveNameEl) {
+          driveNameEl.textContent = config.shared_drive_id ? ('Ortak Drive: ' + config.shared_drive_id) : (config.root_folder_name || 'Standart Alan');
+        }
+
+        const syncEl = document.getElementById('stat-synced-count');
+        if (syncEl) syncEl.textContent = status.synced_count || 0;
+
+        const pendEl = document.getElementById('stat-pending-count');
+        if (pendEl) pendEl.textContent = status.queue_pending || 0;
+
+        const driveSharedInp = document.getElementById('drive-shared-id');
+        if (driveSharedInp && !driveSharedInp.value && config.shared_drive_id) {
+          driveSharedInp.value = config.shared_drive_id;
+        }
+      } catch (e) {
+        console.warn('Drive status load error:', e);
+      }
+    }
+
+    function checkDriveStatus() {
+      loadDriveStatus();
+    }
+
+    async function submitDriveConfig() {
+      const fileInp = document.getElementById('sa-file-input');
+      const sharedDriveId = (document.getElementById('drive-shared-id') || {}).value?.trim() || '';
+
+      try {
+        if (fileInp && fileInp.files && fileInp.files[0]) {
+          const fd = new FormData();
+          fd.append('file', fileInp.files[0]);
+          const upRes = await fetch('/api/team/gdrive/upload-service-account', {
+            method: 'POST',
+            body: fd
+          });
+          if (!upRes.ok) {
+            const d = await upRes.json();
+            return alert(d.detail || 'Service Account dosyası yüklenemedi.');
+          }
+        }
+
+        const cfgRes = await fetch('/api/team/gdrive/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shared_drive_id: sharedDriveId })
+        });
+        if (!cfgRes.ok) {
+          const d = await cfgRes.json();
+          return alert(d.detail || 'Drive yapılandırması kaydedilemedi.');
+        }
+
+        closeModal('modal-drive');
+        showToast('✅ Kurumsal Drive ayarları başarıyla kaydedildi!');
+        loadDriveStatus();
+      } catch (e) {
+        alert('Hata: ' + e);
+      }
     }
 
     // Filters
     function filterVaultType(type) {
       document.querySelectorAll('#tab-vault .filter-pills .pill').forEach(p => p.classList.remove('active'));
-      event?.target?.classList.add('active');
+      if (event && event.target) event.target.classList.add('active');
       if (type === 'images') renderVault(vaultItems.filter(p => p.has_image));
       else if (type === 'texts') renderVault(vaultItems.filter(p => !p.has_image));
       else renderVault(vaultItems);
@@ -1751,12 +1994,13 @@
 
     function filterVaultPlatform(plat) {
       document.querySelectorAll('#tab-vault .filter-pills .pill').forEach(p => p.classList.remove('active'));
-      event?.target?.classList.add('active');
-      renderVault(vaultItems.filter(p => p.platform === plat));
+      if (event && event.target) event.target.classList.add('active');
+      if (plat === 'all') renderVault(vaultItems);
+      else renderVault(vaultItems.filter(p => p.platform === plat));
     }
 
     function filterVault() {
-      const q = document.getElementById('vault-search').value.toLowerCase();
+      const q = (document.getElementById('vault-search') || {}).value?.toLowerCase() || '';
       renderVault(vaultItems.filter(p =>
         (p.title || '').toLowerCase().includes(q) ||
         (p.prompt || '').toLowerCase().includes(q) ||
@@ -1773,7 +2017,7 @@
       return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
     function escapeQuotes(t) {
-      return (t || '').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+      return (t || '').replace(/'/g, "\'").replace(/\n/g, '\\n');
     }
 
     // Close on background click
@@ -1794,6 +2038,14 @@
         navigator.sendBeacon('/api/system/shutdown');
       });
     }
+
+    // Attach real-time input listener to playground prompt template
+    document.addEventListener('DOMContentLoaded', () => {
+      const tmplArea = document.getElementById('play-prompt-template');
+      if (tmplArea) {
+        tmplArea.addEventListener('input', () => renderPlaygroundVariables(tmplArea.value));
+      }
+    });
 
     // Startup
     initBrowserWatcher();

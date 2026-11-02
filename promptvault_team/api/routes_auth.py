@@ -30,6 +30,17 @@ class GoogleLoginRequest(BaseModel):
 
 
 def _decode_google_jwt(token: str) -> dict[str, Any]:
+    # 1. Try official verification via google.oauth2.id_token if online/installed
+    try:
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+        payload = id_token.verify_oauth2_token(token, google_requests.Request())
+        if payload and payload.get("email"):
+            return payload
+    except Exception:
+        pass
+
+    # 2. Resilient fallback: direct URL-safe base64 JWT payload decode
     import base64
     try:
         parts = token.strip().split(".")

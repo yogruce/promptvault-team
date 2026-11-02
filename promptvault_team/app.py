@@ -20,7 +20,11 @@ from .db import TeamLibrary
 from .gdrive_service import CorporateGDriveSync
 
 
-def create_team_app(data_dir: str | Path | None = None, mode: str = "admin") -> FastAPI:
+def create_team_app(
+    data_dir: str | Path | None = None,
+    mode: str = "admin",
+    auto_close: bool = False,
+) -> FastAPI:
     import os
     import time
     import threading
@@ -45,21 +49,24 @@ def create_team_app(data_dir: str | Path | None = None, mode: str = "admin") -> 
     app.state.last_heartbeat = time.time()
     app.state.has_connected = False
     app.state.shutdown_requested = False
+    app.state.shutdown_time = 0.0
 
     def _auto_close_watcher():
         time.sleep(12)
         while True:
             time.sleep(1)
             if app.state.has_connected:
-                elapsed = time.time() - app.state.last_heartbeat
-                if app.state.shutdown_requested and elapsed > 1.5:
+                now = time.time()
+                elapsed = now - app.state.last_heartbeat
+                if app.state.shutdown_requested and (now - app.state.shutdown_time > 4.0) and elapsed > 4.0:
                     print("\n[BİLGİ] Tarayıcı kapatıldı, terminal sonlandırılıyor...")
                     os._exit(0)
-                elif elapsed > 6.0:
+                elif elapsed > 15.0:
                     print("\n[BİLGİ] Tarayıcı bağlantısı kesildi (zaman aşımı), terminal sonlandırılıyor...")
                     os._exit(0)
 
-    threading.Thread(target=_auto_close_watcher, daemon=True, name="AutoCloseWatcher").start()
+    if auto_close:
+        threading.Thread(target=_auto_close_watcher, daemon=True, name="AutoCloseWatcher").start()
 
     @app.post("/api/system/heartbeat")
     def heartbeat():
@@ -71,6 +78,7 @@ def create_team_app(data_dir: str | Path | None = None, mode: str = "admin") -> 
     @app.post("/api/system/shutdown")
     def shutdown_signal():
         app.state.shutdown_requested = True
+        app.state.shutdown_time = time.time()
         return {"status": "shutting_down"}
 
     # Enable CORS

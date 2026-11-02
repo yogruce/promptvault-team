@@ -1,12 +1,21 @@
 """Unit tests for PromptVault Team Edition."""
 from __future__ import annotations
 
+import io
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from promptvault_team.app import create_team_app
 from promptvault_team.db import TeamLibrary, extract_template_variables
 from promptvault_team.models import LLMPlatform, PromptType, SystemEntityType
+
+
+def _create_dummy_png_bytes(width: int = 100, height: int = 100, color: str = "blue") -> bytes:
+    img = Image.new("RGB", (width, height), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def test_extract_template_variables():
@@ -118,3 +127,81 @@ def test_team_api_endpoints(tmp_path):
     resp = client.get("/api/team/gdrive/status")
     assert resp.status_code == 200
     assert "is_configured" in resp.json()
+
+
+def test_visual_vault_image_upload_and_thumb(tmp_path):
+    app = create_team_app(data_dir=tmp_path / "img_vault")
+    client = TestClient(app)
+
+    # Create dummy PNG file
+    png_bytes = _create_dummy_png_bytes(250, 250, "purple")
+
+    files = {"file": ("test_render.png", png_bytes, "image/png")}
+    data = {
+        "title": "Cyberpunk Neon City",
+        "prompt": "hyperrealistic futuristic cyberpunk city at night with neon lights",
+        "platform": "midjourney",
+        "tags": "cyberpunk, scifi, neon",
+    }
+
+    resp = client.post("/api/team/prompts/upload-asset", files=files, data=data)
+    assert resp.status_code == 200
+    item = resp.json()["prompt"]
+    prompt_id = item["id"]
+    assert item["has_image"] == 1
+    assert item["image_hash"] is not None
+
+    # Retrieve prompt details
+    r_item = client.get(f"/api/team/prompts/{prompt_id}")
+    assert r_item.status_code == 200
+    assert r_item.json()["title"] == "Cyberpunk Neon City"
+
+    # Retrieve full image
+    r_img = client.get(f"/api/team/prompts/{prompt_id}/image")
+    assert r_img.status_code == 200
+    assert r_img.headers["content-type"].startswith("image/")
+
+    # Retrieve thumbnail
+    r_thumb = client.get(f"/api/team/prompts/{prompt_id}/thumb")
+    assert r_thumb.status_code == 200
+    assert r_thumb.headers["content-type"].startswith("image/")
+
+    # Filter prompts by platform
+    r_list = client.get("/api/team/prompts?platform=midjourney")
+    assert r_list.status_code == 200
+    assert len(r_list.json()["items"]) == 1
+
+
+def test_gdrive_config_and_connect_token_roundtrip(tmp_path):
+    # Admin server generates connect token
+    admin_app = create_team_app(data_dir=tmp_path / "drive_admin", mode="admin")
+    admin_client = TestClient(admin_app)
+
+    # Save Drive configuration
+    cfg_resp = admin_client.post(
+        "/api/team/gdrive/config",
+        json={"shared_drive_id": "0ABcDeF12345678", "root_folder_name": "Acme Team Vault"},
+    )
+    assert cfg_resp.status_code == 200
+
+    # Get Connect Token
+    t_resp = admin_client.get("/api/team/gdrive/connect-token")
+    assert t_resp.status_code == 200
+    token = t_resp.json()["token"]
+    assert token.startswith("PVTEAM_")
+
+    # Client server connects using token
+    client_app = create_team_app(data_dir=tmp_path / "drive_client", mode="client")
+    client_client = TestClient(client_app)
+
+    apply_resp = client_client.post(
+        "/api/team/gdrive/connect-token",
+        json={"token": token},
+    )
+    assert apply_resp.status_code == 200
+    assert apply_resp.json()["ok"] is True
+
+    # Verify client config matches
+    client_cfg = client_client.get("/api/team/gdrive/config").json()
+    assert client_cfg["shared_drive_id"] == "0ABcDeF12345678"
+    assert client_cfg["root_folder_name"] == "Acme Team Vault"

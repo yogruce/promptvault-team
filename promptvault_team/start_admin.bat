@@ -11,7 +11,7 @@ echo.
 if not exist .venv\Scripts\python.exe (
     echo [BILGI] Ilk kurulum yapiliyor, sanal ortam olusturuluyor...
     python -m venv .venv
-    .venv\Scripts\pip install -e .[web]
+    .venv\Scripts\pip install -e .
 )
 
 :: 7861 portunu tutan eski sureci sonlandir
@@ -19,7 +19,12 @@ powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7861 -ErrorActio
 
 echo Yonetici Paneli: http://127.0.0.1:7861
 echo Tarayici aciliyor...
+echo [BILGI] Tarayici kapatildiginda bu pencere otomatik olarak kapanacaktir.
 echo.
 
 .venv\Scripts\python.exe -m promptvault_team --role admin --port 7861 --open
-pause
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo [HATA] Bir sorun olustu, hata detaylari yukaridadir.
+    pause
+)

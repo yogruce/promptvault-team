@@ -1,4 +1,8 @@
+import base64
+import json
 import pytest
+from fastapi.testclient import TestClient
+from promptvault_team.app import create_team_app
 from promptvault_team.db import TeamLibrary
 
 
@@ -54,11 +58,6 @@ def test_client_mode_google_login_whitelist(tmp_path):
 
 
 def test_google_login_api_endpoints(tmp_path):
-    from promptvault_team.app import create_team_app
-    from fastapi.testclient import TestClient
-    import base64
-    import json
-
     app = create_team_app(data_dir=tmp_path / "api_test_db", mode="admin")
     client = TestClient(app)
 
@@ -92,3 +91,79 @@ def test_google_login_api_endpoints(tmp_path):
     assert data2["ok"] is True
     assert data2["user"]["email"] == "muhendis@acme.com"
     assert data2["user"]["role"] == "editor"
+
+    # 3. Google Sign in with existing user and richer name
+    r3 = client.post("/api/team/auth/google", json={"email": "muhendis@acme.com", "name": "Muhendis Can Yilmaz"})
+    assert r3.status_code == 200
+    assert r3.json()["user"]["name"] == "Muhendis Can Yilmaz"
+
+
+def test_google_login_validation_and_errors(tmp_path):
+    app = create_team_app(data_dir=tmp_path / "g_val_db", mode="admin")
+    client = TestClient(app)
+
+    # Missing email and no token -> 400
+    r = client.post("/api/team/auth/google", json={"email": "", "name": ""})
+    assert r.status_code == 400
+
+    # Invalid email without @ -> 400
+    r2 = client.post("/api/team/auth/google", json={"email": "notanemail", "name": "Bad"})
+    assert r2.status_code == 400
+
+    # Malformed credential token without email in body -> 400
+    r3 = client.post("/api/team/auth/google", json={"credential_token": "invalid.jwt.token"})
+    assert r3.status_code == 400
+
+    # Malformed token but valid fallback email in body -> SUCCESS
+    r4 = client.post("/api/team/auth/google", json={"credential_token": "broken", "email": "valid@gmail.com", "name": "Valid"})
+    assert r4.status_code == 200
+    assert r4.json()["user"]["email"] == "valid@gmail.com"
+
+
+def test_client_mode_api_restrictions(tmp_path):
+    app = create_team_app(data_dir=tmp_path / "client_api_db", mode="client")
+    client = TestClient(app)
+
+    # Set company policy first directly on app lib
+    lib: TeamLibrary = app.routes[0].endpoint.__globals__.get("lib") or app.state._state.get("lib")  # or create admin
+    # Directly configure policy via admin DB
+    admin_app = create_team_app(data_dir=tmp_path / "client_api_db", mode="admin")
+    admin_client = TestClient(admin_app)
+    admin_res = admin_client.post("/api/team/auth/google", json={"email": "admin@mycompany.com", "name": "Root Admin"})
+    admin_token = admin_res.json()["token"]
+
+    admin_client.post(
+        "/api/team/auth/company/policy",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "company_name": "MyCompany",
+            "allowed_domains": ["mycompany.com"],
+            "default_role": "editor",
+            "allow_all_domain_users": True,
+        }
+    )
+
+    # Now use client_client
+    # Outsider blocked with 403
+    r_bad = client.post("/api/team/auth/google", json={"email": "outsider@evil.com", "name": "Attacker"})
+    assert r_bad.status_code == 403
+
+    # Company member allowed with 200
+    r_good = client.post("/api/team/auth/google", json={"email": "worker@mycompany.com", "name": "Worker"})
+    assert r_good.status_code == 200
+    assert r_good.json()["user"]["role"] == "editor"
+
+
+def test_system_heartbeat_and_shutdown(tmp_path):
+    app = create_team_app(data_dir=tmp_path / "sys_db", mode="admin")
+    client = TestClient(app)
+
+    # Heartbeat
+    r1 = client.post("/api/system/heartbeat")
+    assert r1.status_code == 200
+    assert r1.json()["status"] == "alive"
+
+    # Shutdown beacon
+    r2 = client.post("/api/system/shutdown")
+    assert r2.status_code == 200
+    assert r2.json()["status"] == "shutting_down"
