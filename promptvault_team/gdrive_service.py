@@ -141,6 +141,8 @@ class CorporateGDriveSync:
             "pull_result": pull_result,
             "status": self.get_status(),
         }
+
+    def save_service_account_json(self, json_content: bytes | str) -> bool:
         if isinstance(json_content, str):
             json_content = json_content.encode("utf-8")
         try:
