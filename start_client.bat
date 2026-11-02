@@ -4,14 +4,22 @@ cd /d "%~dp0"
 
 echo ========================================================
 echo   PromptVault Team - CALISAN (CLIENT) SURUMU
-echo   Ekip Prompt Kasasi, Gemini Gems ^& Claude Skills
+echo   Ekip Prompterine ^& Gems Kasasina Baglan
 echo ========================================================
 echo.
 
 if not exist .venv\Scripts\python.exe (
     echo [BILGI] Ilk kurulum yapiliyor, sanal ortam olusturuluyor...
     python -m venv .venv
-    .venv\Scripts\pip install -e .
+)
+
+:: Paketlerin kurulu olup olmadigini kontrol et
+.venv\Scripts\python.exe -c "import uvicorn, fastapi" >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo [BILGI] Gerekli kutuphaneler yukleniyor, lutfen bekleyin...
+    .venv\Scripts\python.exe -m pip install --upgrade pip
+    .venv\Scripts\python.exe -m pip install -r requirements.txt
+    .venv\Scripts\python.exe -m pip install -e .
 )
 
 :: 7862 portunu tutan eski sureci sonlandir
