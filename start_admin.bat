@@ -43,7 +43,10 @@ if errorlevel 1 (
     echo   [GUNCELLEME] GitHub'da yeni bir surum tespit edildi!
     echo   Guncel dosyalar indiriliyor...
     echo ========================================================
-    git pull origin main
+    git pull origin main || (
+        echo   [BILGI] Yerel cakismalar temizlenip son surume esitleniyor...
+        git reset --hard origin/main
+    )
     if exist requirements.txt (
         .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
     )
@@ -99,4 +102,6 @@ if %APP_EXIT_CODE% neq 0 (
     echo.
     echo [HATA] Bir sorun olustu, hata detaylari yukaridadir.
     pause
+    exit /b %APP_EXIT_CODE%
 )
+exit /b 0

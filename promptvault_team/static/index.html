@@ -1307,12 +1307,22 @@
     function toggleReconnectForm() {
       const formEl = document.getElementById('card-client-connect');
       if (formEl) {
+        window.__showConnectFormOverride = (formEl.style.display === 'none');
         formEl.style.display = formEl.style.display === 'none' ? 'block' : 'none';
+        if (formEl.style.display === 'block') {
+          const inp = document.getElementById('client-connect-token-input');
+          if (inp) {
+            inp.focus();
+            inp.select();
+          }
+        }
       }
     }
 
-    async function applyClientConnectToken() {
-      const token = document.getElementById('client-connect-token-input').value.trim();
+    async function applyClientConnectToken(explicitToken, silent = false) {
+      const token = (typeof explicitToken === 'string' && explicitToken.trim())
+        ? explicitToken.trim()
+        : (document.getElementById('client-connect-token-input') ? document.getElementById('client-connect-token-input').value.trim() : '');
       if (!token) return alert('Lütfen yöneticinizin paylaştığı Ekip Bağlantı Kodunu girin.');
 
       // Save token in browser localStorage for instant restore
@@ -1320,7 +1330,7 @@
         localStorage.setItem('pv_team_token', token);
       } catch (e) {}
 
-      showToast('Bağlanılıyor ve şirket kasası eşitleniyor...');
+      if (!silent) showToast('Bağlanılıyor ve şirket kasası eşitleniyor...');
       try {
         const res = await fetch('/api/team/gdrive/connect-token', {
           method: 'POST',
@@ -1329,15 +1339,16 @@
         });
         const d = await res.json();
         if (res.ok) {
-          showToast(`🎉 '${d.company_name}' kasasına başarıyla bağlanıldı ve eşitlendi!`);
+          window.__showConnectFormOverride = false;
+          if (!silent) showToast(`🎉 '${d.company_name}' kasasına başarıyla bağlanıldı ve eşitlendi!`);
           loadVault();
           loadEntities();
           loadDriveStatus();
         } else {
-          alert(d.detail || 'Bağlantı başarısız.');
+          if (!silent) alert(d.detail || 'Bağlantı başarısız.');
         }
       } catch (e) {
-        alert('Hata: ' + e);
+        if (!silent) alert('Hata: ' + e);
       }
     }
 
@@ -2078,16 +2089,23 @@
           tokenInput.value = savedToken;
         }
 
-        if (status.is_connected) {
+        const isReady = status.is_connected || status.is_configured;
+        if (isReady) {
           if (connectedCard) connectedCard.style.display = 'block';
-          if (connectForm) connectForm.style.display = 'none';
+          if (connectForm && !window.__showConnectFormOverride) connectForm.style.display = 'none';
           const compDesc = document.getElementById('connected-company-desc');
           if (compDesc) {
-            compDesc.textContent = `Alan: ${status.shared_drive_name || 'Şirket Alanı'} • Durum: Aktif ve Eşitleniyor`;
+            compDesc.textContent = `Alan: ${status.shared_drive_name || config.root_folder_name || 'Şirket Kasası'} • Durum: Aktif ve Eşitleniyor`;
           }
         } else {
-          if (connectedCard) connectedCard.style.display = 'none';
-          if (connectForm) connectForm.style.display = 'block';
+          if (savedToken && !window.__autoConnectAttempted) {
+            window.__autoConnectAttempted = true;
+            console.log('[PromptVault] Kayıtlı ekip anahtarıyla otomatik bağlanılıyor...');
+            applyClientConnectToken(savedToken, true);
+          } else {
+            if (connectedCard) connectedCard.style.display = 'none';
+            if (connectForm) connectForm.style.display = 'block';
+          }
         }
 
         const driveSharedInp = document.getElementById('drive-shared-id');

@@ -58,6 +58,16 @@ class CorporateGDriveSync:
             "queue_pending": 0,
         }
 
+        # Auto-recover service account from saved token if file missing
+        if not self.service_account_file.exists():
+            cfg = self.load_config()
+            saved_token = (cfg.get("last_token") or "").strip()
+            if saved_token:
+                try:
+                    self.apply_connect_token(saved_token)
+                except Exception:
+                    pass
+
         # Subscribe to library real-time changes
         self.lib.add_sync_listener(self._on_library_change)
 
