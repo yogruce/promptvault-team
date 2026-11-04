@@ -11,75 +11,58 @@ echo   Gems, Custom GPTs, Skills ve Kurumsal Drive Yonetimi
 echo ========================================================
 echo.
 
+:: 1. Python Sanal Ortami Kontrolu
 if not exist .venv\Scripts\python.exe (
     echo [BILGI] Ilk kurulum yapiliyor, sanal ortam olusturuluyor...
+    where python >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo [HATA] Sisteminizde Python bulunamadi!
+        echo Lutfen https://www.python.org adresinden Python indirip kurun.
+        echo Kurulum sirasinda "Add python.exe to PATH" secenegini isaretleyin.
+        echo.
+        pause
+        exit /b 1
+    )
     python -m venv .venv
+    if errorlevel 1 (
+        echo [HATA] Sanal ortam olusturulamadi.
+        pause
+        exit /b 1
+    )
 )
 
-:: Paketlerin kurulu olup olmadigini kontrol et
+:: 2. Gerekli paketler kurulu mu?
 .venv\Scripts\python.exe -c "import uvicorn, fastapi" >nul 2>&1
 if errorlevel 1 (
     echo [BILGI] Gerekli kutuphaneler yukleniyor, lutfen bekleyin...
-    .venv\Scripts\python.exe -m pip install --upgrade pip
-    .venv\Scripts\python.exe -m pip install -r requirements.txt
-    .venv\Scripts\python.exe -m pip install -e .
-)
-
-:START_APP
-:: GitHub Otomatik Guncelleme Kontrolu
-where git >nul 2>&1
-if errorlevel 1 goto :CHECK_ZIP_UPDATE
-if not exist .git goto :CHECK_ZIP_UPDATE
-
-echo [KONTROL] GitHub guncellemeleri denetleniyor...
-git fetch origin main >nul 2>&1
-git rev-parse HEAD > "%TEMP%\pvt_local.txt" 2>nul
-git rev-parse origin/main > "%TEMP%\pvt_remote.txt" 2>nul
-
-fc "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo ========================================================
-    echo   [GUNCELLEME] GitHub'da yeni bir surum tespit edildi!
-    echo   Guncel dosyalar indiriliyor...
-    echo ========================================================
-    git pull origin main || (
-        echo   [BILGI] Yerel cakismalar temizlenip son surume esitleniyor...
-        git reset --hard origin/main
-    )
-    if exist requirements.txt (
-        .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
-    )
+    .venv\Scripts\python.exe -m pip install --upgrade pip --quiet
+    .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
     .venv\Scripts\python.exe -m pip install -e . --no-deps --quiet
-    echo   [BASARILI] Uygulama en son surume guncellendi.
-    echo.
 )
-del "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
-goto :AFTER_UPDATE_CHECK
 
-:CHECK_ZIP_UPDATE
-echo [KONTROL] GitHub guncellemeleri denetleniyor...
-.venv\Scripts\python.exe -c "import sys; from promptvault_team.updater import AppUpdater; sys.exit(42 if AppUpdater().check_for_updates().get('has_update') else 0)" >nul 2>&1
-if errorlevel 42 (
-    echo.
-    echo ========================================================
-    echo   [GUNCELLEME] GitHub'da yeni bir surum tespit edildi!
-    echo   Guncel ZIP paketi indiriliyor ve kuruluyor...
-    echo ========================================================
-    .venv\Scripts\python.exe -c "from promptvault_team.updater import AppUpdater; AppUpdater().apply_update()"
-    if exist requirements.txt (
-        .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
+:: 3. Git guncellemesi (varsa)
+if exist .git (
+    where git >nul 2>&1
+    if not errorlevel 1 (
+        git fetch origin main >nul 2>&1
+        git rev-parse HEAD > "%TEMP%\pvt_local.txt" 2>nul
+        git rev-parse origin/main > "%TEMP%\pvt_remote.txt" 2>nul
+        fc "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
+        if errorlevel 1 (
+            echo [GUNCELLEME] Yeni surum indiriliyor...
+            git pull origin main || git reset --hard origin/main
+        )
+        del "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
     )
-    .venv\Scripts\python.exe -m pip install -e . --no-deps --quiet
-    echo   [BASARILI] Uygulama en son surume guncellendi.
-    echo.
 )
 
-:AFTER_UPDATE_CHECK
-:: 7861 portunu tutan eski sureci sonlandir
+:RUN_SERVER
+:: 4. Port 7861'i tutan eski sureci kapat
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7861 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":7861" ^| findstr "LISTENING"') do taskkill /F /PID %%a >nul 2>&1
 
+echo.
 echo Yonetici Paneli: http://127.0.0.1:7861
 echo Tarayici aciliyor...
 echo [BILGI] Tarayici kapatildiginda bu pencere otomatik olarak kapanacaktir.
@@ -91,17 +74,18 @@ set APP_EXIT_CODE=%ERRORLEVEL%
 :: Exit code 42: Canli guncelleme sonrasi otomatik yeniden baslatma
 if "%APP_EXIT_CODE%"=="42" (
     echo.
-    echo ========================================================
-    echo   [YENIDEN BASLATMA] Guncelleme sonrasi baslatiliyor...
-    echo ========================================================
+    echo [YENIDEN BASLATMA] Guncelleme sonrasi baslatiliyor...
     timeout /t 2 /nobreak >nul
-    goto :START_APP
+    goto :RUN_SERVER
 )
 
 if %APP_EXIT_CODE% neq 0 (
     echo.
-    echo [HATA] Bir sorun olustu, hata detaylari yukaridadir.
+    echo ========================================================
+    echo [HATA] Sunucu bir hata ile kapandi (Hata Kodu: %APP_EXIT_CODE%)
+    echo ========================================================
     pause
     exit /b %APP_EXIT_CODE%
 )
+
 exit /b 0

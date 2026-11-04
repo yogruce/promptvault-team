@@ -256,8 +256,11 @@ class AppUpdater:
                 target_file = self.repo_dir / rel_path
                 target_file.parent.mkdir(parents=True, exist_ok=True)
                 content = zf.read(member.filename)
-                target_file.write_bytes(content)
-                extracted_count += 1
+                try:
+                    target_file.write_bytes(content)
+                    extracted_count += 1
+                except Exception as e:
+                    logger.warning(f"Could not overwrite {target_file}: {e}")
 
             update_output = f"{extracted_count} dosya güncellendi."
 

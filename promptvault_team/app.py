@@ -55,20 +55,20 @@ def create_team_app(
     app.state.shutdown_time = 0.0
 
     def _auto_close_watcher():
-        time.sleep(3)
+        time.sleep(8)
         start_time = time.time()
         while True:
-            time.sleep(0.5)
+            time.sleep(1.0)
             now = time.time()
             if app.state.has_connected:
                 elapsed = now - app.state.last_heartbeat
-                if app.state.shutdown_requested and (now - app.state.shutdown_time > 1.5) and elapsed > 1.5:
+                if app.state.shutdown_requested and (now - app.state.shutdown_time > 4.0) and elapsed > 4.0:
                     print("\n[BİLGİ] Tarayıcı kapatıldı, terminal sonlandırılıyor...")
                     os._exit(0)
-                elif elapsed > 5.0:
+                elif elapsed > 12.0:
                     print("\n[BİLGİ] Tarayıcı bağlantısı kesildi, terminal sonlandırılıyor...")
                     os._exit(0)
-            elif (now - start_time) > 40.0:
+            elif (now - start_time) > 60.0:
                 print("\n[BİLGİ] Tarayıcı bağlantısı kurulmadı, terminal sonlandırılıyor...")
                 os._exit(0)
 
