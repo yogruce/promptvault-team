@@ -19,6 +19,14 @@ def _free_port_windows(port: int) -> None:
     try:
         cmd = f'powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | ForEach-Object {{ if ($_.OwningProcess -ne {current_pid}) {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }} }}"'
         subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        out = subprocess.check_output(f'netstat -aon | findstr ":{port}"', shell=True, text=True, stderr=subprocess.DEVNULL)
+        for line in out.strip().splitlines():
+            if "LISTENING" in line:
+                parts = line.strip().split()
+                if len(parts) >= 5:
+                    pid = int(parts[-1])
+                    if pid != current_pid and pid > 0:
+                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 

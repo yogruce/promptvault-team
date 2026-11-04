@@ -75,6 +75,7 @@ if errorlevel 42 (
 :AFTER_UPDATE_CHECK
 :: 7862 portunu tutan eski sureci sonlandir
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7862 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":7862" ^| findstr "LISTENING"') do taskkill /F /PID %%a >nul 2>&1
 
 echo Calisan Kasasi: http://127.0.0.1:7862
 echo Tarayici aciliyor...

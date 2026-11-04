@@ -75,6 +75,7 @@ if errorlevel 42 (
 :AFTER_UPDATE_CHECK
 :: 7861 portunu tutan eski sureci sonlandir
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7861 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":7861" ^| findstr "LISTENING"') do taskkill /F /PID %%a >nul 2>&1
 
 echo Yonetici Paneli: http://127.0.0.1:7861
 echo Tarayici aciliyor...
