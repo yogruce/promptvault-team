@@ -481,5 +481,51 @@ def test_updater_zip_fallback(tmp_path):
         assert (target_dir / ".version").exists()
 
 
+def test_gdrive_dual_mode_and_token_persistence(tmp_path):
+    from unittest.mock import MagicMock
+    from promptvault_team.gdrive_service import CorporateGDriveSync
+
+    lib = TeamLibrary(data_dir=tmp_path / "lib")
+    sync = CorporateGDriveSync(lib=lib, config_dir=tmp_path / "cfg")
+
+    # 1. Test token persistence in config
+    test_token = "PVTEAM_eyJzaGFyZWRfZHJpdmVfaWQiOiAiT1JUQUtfMTIzIn0="
+    sync.save_config(shared_drive_id="ORTAK_123", root_folder_name="Test Vault", last_token=test_token)
+    cfg = sync.load_config()
+    assert cfg["shared_drive_id"] == "ORTAK_123"
+    assert cfg["root_folder_name"] == "Test Vault"
+    assert cfg["last_token"] == test_token
+
+    # 2. Test dual mode: Shared Drive vs Regular Folder
+    mock_service = MagicMock()
+    sync.build_service = lambda: mock_service
+    sync.is_configured = lambda: True
+
+    # Case A: Shared Drive returns successfully from drives().get()
+    mock_service.drives().get().execute.return_value = {"id": "ORTAK_123", "name": "CT_AI_ORTAK"}
+    assert sync._test_connection() is True
+    assert sync._stats["drive_type"] == "shared_drive"
+    assert sync._stats["shared_drive_name"] == "CT_AI_ORTAK"
+
+    # Case B: Not a Shared Drive (drives().get throws 404), but is a Normal Folder (files().get succeeds)
+    mock_service.drives().get().execute.side_effect = Exception("404 File not found")
+    mock_service.files().get().execute.return_value = {
+        "id": "FOLDER_456",
+        "name": "Klasörüm",
+        "mimeType": "application/vnd.google-apps.folder"
+    }
+    sync.save_config(shared_drive_id="FOLDER_456")
+    assert sync._test_connection() is True
+    assert sync._stats["drive_type"] == "folder"
+    assert sync._stats["shared_drive_name"] == "Klasörüm"
+
+    # Case C: Neither Shared Drive nor Folder accessible -> returns False with clear last_error
+    mock_service.files().get().execute.side_effect = Exception("404 Not Found")
+    assert sync._test_connection() is False
+    assert "404 Not Found" in sync._stats["last_error"]
+    assert "Çözüm Adımları" in sync._stats["last_error"]
+
+
+
 
 

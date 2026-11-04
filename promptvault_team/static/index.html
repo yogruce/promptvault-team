@@ -568,6 +568,28 @@
           <h1>☁️ Google Workspace Ortak Drive Senkronizasyonu</h1>
           <p>Kasaya eklenen her görsel ve prompt, Service Account üzerinden şirket Drive'ına anında yedeklenir.</p>
         </div>
+        <!-- EKİP KASASINA BAĞLI KART (CONNECTED STATE) -->
+        <div class="card" id="card-client-connected" style="display: none; margin-bottom: 24px; padding: 20px 24px; border-color: rgba(16, 185, 129, 0.45); background: linear-gradient(180deg, #064e3b 0%, #062a21 100%);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="font-size: 32px;">✅</span>
+              <div>
+                <h2 style="font-size: 16px; margin: 0; color: #a7f3d0; display: flex; align-items: center; gap: 8px;">
+                  Ekip Kasasına Başarıyla Bağlı
+                </h2>
+                <p id="connected-company-desc" style="font-size: 13px; color: #6ee7b7; margin: 4px 0 0 0;">
+                  Şirket Kasası ve Google Drive eşitlemesi aktif çalışıyor.
+                </p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <button class="btn btn-secondary" onclick="pullFromDrive()">🔄 Drive'dan Yenile</button>
+              <button class="btn btn-secondary" onclick="pushToDrive()">⬆️ Drive'a Gönder</button>
+              <button class="btn btn-secondary" style="font-size: 12px; opacity: 0.9;" onclick="toggleReconnectForm()">🔑 Kodu Değiştir</button>
+            </div>
+          </div>
+        </div>
+
         <!-- EKİP KASASINA BAĞLAN (CLIENT MODU İÇİN) -->
         <div class="card" id="card-client-connect" style="margin-bottom: 24px; padding: 24px; border-color: rgba(99, 102, 241, 0.4); background: linear-gradient(180deg, #111827 0%, #0d121f 100%);">
           <h2 style="font-size: 16px; margin-bottom: 10px; color: #818cf8; display: flex; align-items: center; gap: 8px;">
@@ -1282,9 +1304,21 @@
       });
     }
 
+    function toggleReconnectForm() {
+      const formEl = document.getElementById('card-client-connect');
+      if (formEl) {
+        formEl.style.display = formEl.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+
     async function applyClientConnectToken() {
       const token = document.getElementById('client-connect-token-input').value.trim();
       if (!token) return alert('Lütfen yöneticinizin paylaştığı Ekip Bağlantı Kodunu girin.');
+
+      // Save token in browser localStorage for instant restore
+      try {
+        localStorage.setItem('pv_team_token', token);
+      } catch (e) {}
 
       showToast('Bağlanılıyor ve şirket kasası eşitleniyor...');
       try {
@@ -2025,7 +2059,7 @@
 
         const driveNameEl = document.getElementById('stat-drive-name');
         if (driveNameEl) {
-          driveNameEl.textContent = config.shared_drive_id ? ('Ortak Drive: ' + config.shared_drive_id) : (config.root_folder_name || 'Standart Alan');
+          driveNameEl.textContent = status.shared_drive_name || (config.shared_drive_id ? ('Ortak Drive: ' + config.shared_drive_id) : (config.root_folder_name || 'Standart Alan'));
         }
 
         const syncEl = document.getElementById('stat-synced-count');
@@ -2033,6 +2067,28 @@
 
         const pendEl = document.getElementById('stat-pending-count');
         if (pendEl) pendEl.textContent = status.queue_pending || 0;
+
+        // Connected / Disconnected Cards Toggle & Token Pre-fill
+        const connectedCard = document.getElementById('card-client-connected');
+        const connectForm = document.getElementById('card-client-connect');
+        const tokenInput = document.getElementById('client-connect-token-input');
+
+        const savedToken = localStorage.getItem('pv_team_token') || config.last_token || status.last_token || '';
+        if (tokenInput && !tokenInput.value && savedToken) {
+          tokenInput.value = savedToken;
+        }
+
+        if (status.is_connected) {
+          if (connectedCard) connectedCard.style.display = 'block';
+          if (connectForm) connectForm.style.display = 'none';
+          const compDesc = document.getElementById('connected-company-desc');
+          if (compDesc) {
+            compDesc.textContent = `Alan: ${status.shared_drive_name || 'Şirket Alanı'} • Durum: Aktif ve Eşitleniyor`;
+          }
+        } else {
+          if (connectedCard) connectedCard.style.display = 'none';
+          if (connectForm) connectForm.style.display = 'block';
+        }
 
         const driveSharedInp = document.getElementById('drive-shared-id');
         if (driveSharedInp && !driveSharedInp.value && config.shared_drive_id) {
@@ -2187,6 +2243,7 @@
     checkAppMode();
     initAuth();
     loadVault();
+    loadDriveStatus();
     checkVersionAndUpdates(true);
     setInterval(() => checkVersionAndUpdates(true), 10 * 60 * 1000);
 
