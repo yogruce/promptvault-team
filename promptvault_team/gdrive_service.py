@@ -306,8 +306,13 @@ class CorporateGDriveSync:
         if not self.is_configured():
             raise ValueError("Google Drive henüz yapılandırılmamış.")
 
-        prompts = self.lib.list_prompts_dict(limit=1000)
-        entities = self.lib.list_system_entities_dict()
+        prompts = self.lib.list_prompts_dict(limit=1000) if hasattr(self.lib, "list_prompts_dict") else []
+        if hasattr(self.lib, "list_system_entities_dict"):
+            entities = self.lib.list_system_entities_dict(limit=1000)
+        elif hasattr(self.lib, "list_system_entities"):
+            entities = [{"id": e.id} for e in self.lib.list_system_entities(limit=1000)]
+        else:
+            entities = []
         queued = 0
 
         for p in prompts:

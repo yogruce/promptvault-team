@@ -1239,3 +1239,40 @@ class TeamLibrary:
                 d["variables"] = json.loads(d.get("variables_json") or "{}")
                 results.append(d)
             return results
+
+    def list_system_entities_dict(
+        self,
+        platform: str | None = None,
+        entity_type: str | None = None,
+        workspace_id: int | None = None,
+        search_query: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        entities = self.list_system_entities(
+            platform=platform,
+            entity_type=entity_type,
+            workspace_id=workspace_id,
+            search_query=search_query,
+            limit=limit,
+        )
+        return [
+            {
+                "id": e.id,
+                "title": e.title,
+                "platform": e.platform,
+                "entity_type": e.entity_type,
+                "system_instructions": e.system_instructions,
+                "template": e.template,
+                "variables": e.variables,
+                "author": e.author,
+                "tags": e.tags,
+                "model_hint": e.model_hint,
+                "temperature": e.temperature,
+                "visibility": e.visibility,
+                "gdrive_file_id": e.gdrive_file_id,
+                "created_at": e.created_at,
+                "updated_at": e.updated_at,
+            }
+            for e in entities
+        ]
+

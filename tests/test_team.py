@@ -425,3 +425,27 @@ def test_app_updater_and_system_endpoints(tmp_path):
     assert "has_update" in res_chk.json()
 
 
+def test_push_to_drive_queuing(tmp_path):
+    from promptvault_team.gdrive_service import CorporateGDriveSync
+
+    lib = TeamLibrary(data_dir=tmp_path)
+    lib.add_prompt(title="Test P1", prompt="hello world", platform="generic")
+    lib.create_system_entity(
+        title="Test Gem",
+        platform="gemini",
+        entity_type="gem",
+        system_instructions="You are helpful.",
+    )
+
+    sync = CorporateGDriveSync(lib=lib)
+    # Mock is_configured returning True
+    sync.is_configured = lambda: True
+
+    res = sync.push_to_drive()
+    assert res["ok"] is True
+    # At least 1 prompt + 1 entity + 1 policy = 3 queued
+    assert res["queued"] >= 3
+    assert sync._queue.qsize() >= 3
+
+
+
