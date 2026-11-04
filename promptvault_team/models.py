@@ -100,8 +100,17 @@ class PromptItem:
     notes: str = ""
     source_url: str = ""
     # Optional image asset association
+    has_image: int = 0
     image_hash: str | None = None
     image_vault_path: str | None = None
+    thumb_vault_path: str | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    model: str = ""
+    sampler: str = ""
+    cfg_scale: float | None = None
+    steps: int | None = None
+    seed: int | None = None
     # Sync metadata
     gdrive_file_id: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

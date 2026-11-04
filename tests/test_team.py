@@ -205,3 +205,184 @@ def test_gdrive_config_and_connect_token_roundtrip(tmp_path):
     client_cfg = client_client.get("/api/team/gdrive/config").json()
     assert client_cfg["shared_drive_id"] == "0ABcDeF12345678"
     assert client_cfg["root_folder_name"] == "Acme Team Vault"
+
+
+def test_upsert_remote_prompt_and_entity_with_assets(tmp_path):
+    lib = TeamLibrary(data_dir=tmp_path / "upsert_test")
+
+    # 1. Upsert prompt with image metadata
+    pid = lib.upsert_remote_prompt({
+        "title": "Neon Samurai",
+        "platform": "flux",
+        "prompt": "futuristic samurai in Tokyo neon rain",
+        "negative_prompt": "blurry, low quality",
+        "tags": ["samurai", "cyberpunk"],
+        "variables": {},
+        "has_image": 1,
+        "image_hash": "deadbeef12345678",
+        "model": "Flux 1.0",
+        "sampler": "Euler a",
+        "cfg_scale": 7.5,
+        "steps": 30,
+        "seed": 999888,
+    }, gdrive_file_id="g_file_001")
+    assert pid is not None
+
+    p = lib.get_prompt_dict(pid)
+    assert p["title"] == "Neon Samurai"
+    assert p["platform"] == "flux"
+    assert p["tags"] == ["samurai", "cyberpunk"]
+    assert p["has_image"] == 1
+    assert p["image_hash"] == "deadbeef12345678"
+    assert p["model"] == "Flux 1.0"
+    assert p["cfg_scale"] == 7.5
+    assert p["seed"] == 999888
+    assert p["gdrive_file_id"] == "g_file_001"
+
+    # 2. Upsert entity with instructions and tags
+    eid = lib.upsert_remote_entity({
+        "title": "Marketing Copywriter",
+        "platform": "claude",
+        "entity_type": "skill",
+        "system_instructions": "You write converting marketing copy.",
+        "template": "Write an ad for {{product}}",
+        "variables": ["product"],
+        "tags": ["copywriting", "ads"],
+    }, gdrive_file_id="g_entity_002")
+    assert eid is not None
+
+    e = lib.get_system_entity(eid)
+    assert e.title == "Marketing Copywriter"
+    assert e.variables == ["product"]
+    assert e.tags == ["copywriting", "ads"]
+    assert e.gdrive_file_id == "g_entity_002"
+
+
+def test_gdrive_image_sync_and_pull_simulation(tmp_path):
+    import json
+    from unittest.mock import MagicMock
+    from promptvault_team.gdrive_service import CorporateGDriveSync
+
+    # 1. Setup PC 1 Library with an image prompt
+    pc1_dir = tmp_path / "pc1"
+    lib1 = TeamLibrary(data_dir=pc1_dir)
+
+    dummy_png = _create_dummy_png_bytes(120, 120, "red")
+    prompt_dict = lib1.add_prompt_with_asset(
+        title="Red Sunset AI",
+        prompt="beautiful sunset over ocean, anime style",
+        platform="midjourney",
+        image_bytes=dummy_png,
+        tags=["sunset", "anime"],
+    )
+    assert prompt_dict["has_image"] == 1
+    img_hash = prompt_dict["image_hash"]
+
+    # 2. Mock Google Drive storage (in-memory dict of files and folders)
+    gdrive_files = {}
+
+    class MockDriveFilesResource:
+        def list(self, **kwargs):
+            q = kwargs.get("q", "")
+            matched = []
+            for fid, f in gdrive_files.items():
+                if f.get("trashed"):
+                    continue
+                parts = [p.strip() for p in q.split(" and ")] if q else []
+                match = True
+                for part in parts:
+                    if " in parents" in part:
+                        pid = part.split(" in parents")[0].strip().strip("'\"")
+                        if pid not in f.get("parents", []):
+                            match = False
+                            break
+                    elif "name = " in part:
+                        name_val = part.split("name = ")[1].strip().strip("'\"")
+                        if f.get("name") != name_val:
+                            match = False
+                            break
+                    elif "mimeType = " in part:
+                        mime_val = part.split("mimeType = ")[1].strip().strip("'\"")
+                        if f.get("mimeType") != mime_val:
+                            match = False
+                            break
+                if match:
+                    matched.append({"id": fid, "name": f["name"]})
+            req = MagicMock()
+            req.execute.return_value = {"files": matched}
+            return req
+
+        def create(self, body, media_body=None, **kwargs):
+            fid = f"drive_id_{len(gdrive_files) + 1}"
+            content = b""
+            if media_body:
+                if hasattr(media_body, "_fd") and hasattr(media_body._fd, "read"):
+                    media_body._fd.seek(0)
+                    content = media_body._fd.read()
+                elif hasattr(media_body, "getblob"):
+                    content = media_body.getblob()
+            gdrive_files[fid] = {
+                "id": fid,
+                "name": body.get("name"),
+                "mimeType": body.get("mimeType"),
+                "parents": body.get("parents", []),
+                "content": content,
+                "trashed": False,
+            }
+            req = MagicMock()
+            req.execute.return_value = {"id": fid}
+            return req
+
+        def update(self, fileId, media_body=None, **kwargs):
+            if fileId in gdrive_files and media_body:
+                if hasattr(media_body, "getblob"):
+                    gdrive_files[fileId]["content"] = media_body.getblob()
+            req = MagicMock()
+            req.execute.return_value = {"id": fileId}
+            return req
+
+        def get_media(self, fileId, **kwargs):
+            req = MagicMock()
+            req.execute.return_value = gdrive_files[fileId]["content"]
+            return req
+
+    mock_service = MagicMock()
+    mock_service.files.return_value = MockDriveFilesResource()
+
+    # 3. Process sync item on PC 1
+    sync1 = CorporateGDriveSync(lib1)
+    sync1.build_service = MagicMock(return_value=mock_service)
+    sync1._process_sync_item("prompt", prompt_dict["id"], "upsert")
+
+    # Verify both the image file and prompt JSON were created in mock Google Drive!
+    filenames = [f["name"] for f in gdrive_files.values()]
+    assert f"{img_hash}.png" in filenames
+    assert any(fn.startswith("prompt_") and fn.endswith(".json") for fn in filenames)
+
+    # 4. Now simulate PC 2 pulling from Google Drive
+    pc2_dir = tmp_path / "pc2"
+    lib2 = TeamLibrary(data_dir=pc2_dir)
+    sync2 = CorporateGDriveSync(lib2)
+    sync2.build_service = MagicMock(return_value=mock_service)
+
+    res_pull = sync2.pull_from_drive()
+    assert res_pull["ok"] is True
+    assert res_pull["synced_prompts"] >= 1
+    assert res_pull["synced_images"] >= 1
+
+    # Verify PC 2 now has the image file on local disk and prompt in SQLite!
+    pc2_img_file = lib2.vault_media_dir / f"{img_hash}.png"
+    assert pc2_img_file.exists()
+    assert pc2_img_file.read_bytes() == dummy_png
+
+    pc2_thumb_file = lib2.vault_thumbs_dir / f"thumb_{img_hash}.jpg"
+    assert pc2_thumb_file.exists()
+
+    pc2_prompts = lib2.list_prompts_dict()
+    assert len(pc2_prompts) == 1
+    assert pc2_prompts[0]["title"] == "Red Sunset AI"
+    assert pc2_prompts[0]["has_image"] == 1
+    assert pc2_prompts[0]["image_hash"] == img_hash
+    assert pc2_prompts[0]["image_vault_path"] == str(pc2_img_file)
+    assert pc2_prompts[0]["thumb_vault_path"] == str(pc2_thumb_file)
+

@@ -108,20 +108,40 @@ def create_prompts_router(lib: TeamLibrary) -> APIRouter:
     @router.get("/{prompt_id}/image")
     def get_prompt_image(prompt_id: int):
         item = lib.get_prompt_dict(prompt_id)
-        if not item or not item.get("image_vault_path"):
+        if not item or not item.get("has_image"):
             raise HTTPException(404, "Görsel bulunamadı.")
-        path = Path(item["image_vault_path"])
-        if not path.exists():
+        
+        path: Path | None = None
+        if item.get("image_vault_path"):
+            p = Path(item["image_vault_path"])
+            if p.exists():
+                path = p
+        if not path and item.get("image_hash"):
+            candidate = lib.vault_media_dir / f"{item['image_hash']}.png"
+            if candidate.exists():
+                path = candidate
+        
+        if not path or not path.exists():
             raise HTTPException(404, "Görsel dosyası diskte bulunamadı.")
         return FileResponse(str(path))
 
     @router.get("/{prompt_id}/thumb")
     def get_prompt_thumb(prompt_id: int):
         item = lib.get_prompt_dict(prompt_id)
-        if not item or not item.get("thumb_vault_path"):
+        if not item or not item.get("has_image"):
             raise HTTPException(404, "Küçük resim bulunamadı.")
-        path = Path(item["thumb_vault_path"])
-        if not path.exists():
+
+        path: Path | None = None
+        if item.get("thumb_vault_path"):
+            p = Path(item["thumb_vault_path"])
+            if p.exists():
+                path = p
+        if not path and item.get("image_hash"):
+            candidate = lib.vault_thumbs_dir / f"thumb_{item['image_hash']}.jpg"
+            if candidate.exists():
+                path = candidate
+
+        if not path or not path.exists():
             return get_prompt_image(prompt_id)
         return FileResponse(str(path))
 

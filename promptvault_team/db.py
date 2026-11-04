@@ -398,26 +398,62 @@ class TeamLibrary:
         title = data.get("title", "İsimsiz Prompt")
         platform = data.get("platform", "generic")
         now = datetime.now(timezone.utc).isoformat()
+
+        tags = data.get("tags", [])
+        tags_json = json.dumps(tags, ensure_ascii=False) if isinstance(tags, list) else str(tags or "[]")
+
+        variables = data.get("variables", {})
+        variables_json = json.dumps(variables, ensure_ascii=False) if isinstance(variables, (dict, list)) else str(variables or "{}")
+
+        has_image = int(data.get("has_image") or 0)
+        image_hash = data.get("image_hash")
+        image_vault_path = data.get("image_vault_path")
+        thumb_vault_path = data.get("thumb_vault_path")
+        image_width = data.get("image_width")
+        image_height = data.get("image_height")
+        model = data.get("model", "")
+        sampler = data.get("sampler", "")
+        cfg_scale = data.get("cfg_scale")
+        steps = data.get("steps")
+        seed = data.get("seed")
+
         with self._lock, self._get_conn() as conn:
-            cur = conn.execute("SELECT id FROM prompts WHERE title = ? AND platform = ?", (title, platform))
+            cur = conn.execute("SELECT id, image_vault_path, thumb_vault_path FROM prompts WHERE title = ? AND platform = ?", (title, platform))
             row = cur.fetchone()
             if row:
                 pid = row["id"]
+                final_img_path = image_vault_path or row["image_vault_path"]
+                final_thumb_path = thumb_vault_path or row["thumb_vault_path"]
                 conn.execute(
                     """
                     UPDATE prompts SET
-                        prompt = ?, negative_prompt = ?, author = ?, tags = ?,
-                        variables = ?, notes = ?, gdrive_file_id = ?, updated_at = ?
+                        prompt = ?, negative_prompt = ?, prompt_type = ?, author = ?, tags_json = ?,
+                        variables_json = ?, notes = ?, has_image = ?, image_hash = ?,
+                        image_vault_path = ?, thumb_vault_path = ?, image_width = ?, image_height = ?,
+                        model = ?, sampler = ?, cfg_scale = ?, steps = ?, seed = ?,
+                        gdrive_file_id = ?, updated_at = ?
                     WHERE id = ?
                     """,
                     (
                         data.get("prompt", ""),
                         data.get("negative_prompt", ""),
+                        data.get("prompt_type", "chat_text"),
                         data.get("author", "Team Member"),
-                        json.dumps(data.get("tags", []), ensure_ascii=False) if isinstance(data.get("tags"), list) else str(data.get("tags", "[]")),
-                        json.dumps(data.get("variables", []), ensure_ascii=False) if isinstance(data.get("variables"), list) else str(data.get("variables", "[]")),
+                        tags_json,
+                        variables_json,
                         data.get("notes", ""),
-                        gdrive_file_id,
+                        has_image,
+                        image_hash,
+                        final_img_path,
+                        final_thumb_path,
+                        image_width,
+                        image_height,
+                        model,
+                        sampler,
+                        cfg_scale,
+                        steps,
+                        seed,
+                        gdrive_file_id or data.get("gdrive_file_id"),
                         now,
                         pid,
                     ),
@@ -426,20 +462,37 @@ class TeamLibrary:
             else:
                 cur2 = conn.execute(
                     """
-                    INSERT INTO prompts (workspace_id, title, platform, prompt_type, prompt, negative_prompt, author, tags, variables, notes, gdrive_file_id, created_at, updated_at)
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO prompts (
+                        workspace_id, title, platform, prompt_type, prompt, negative_prompt, author,
+                        tags_json, variables_json, notes, has_image, image_hash, image_vault_path,
+                        thumb_vault_path, image_width, image_height, model, sampler, cfg_scale,
+                        steps, seed, gdrive_file_id, created_at, updated_at
+                    ) VALUES (
+                        1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
                     """,
                     (
                         title,
                         platform,
-                        data.get("prompt_type", "chat"),
+                        data.get("prompt_type", "chat_text"),
                         data.get("prompt", ""),
                         data.get("negative_prompt", ""),
                         data.get("author", "Team Member"),
-                        json.dumps(data.get("tags", []), ensure_ascii=False) if isinstance(data.get("tags"), list) else str(data.get("tags", "[]")),
-                        json.dumps(data.get("variables", []), ensure_ascii=False) if isinstance(data.get("variables"), list) else str(data.get("variables", "[]")),
+                        tags_json,
+                        variables_json,
                         data.get("notes", ""),
-                        gdrive_file_id,
+                        has_image,
+                        image_hash,
+                        image_vault_path,
+                        thumb_vault_path,
+                        image_width,
+                        image_height,
+                        model,
+                        sampler,
+                        cfg_scale,
+                        steps,
+                        seed,
+                        gdrive_file_id or data.get("gdrive_file_id"),
                         data.get("created_at", now),
                         now,
                     ),
@@ -450,6 +503,13 @@ class TeamLibrary:
         title = data.get("title", "İsimsiz Gem")
         platform = data.get("platform", "gemini")
         now = datetime.now(timezone.utc).isoformat()
+
+        tags = data.get("tags", [])
+        tags_json = json.dumps(tags, ensure_ascii=False) if isinstance(tags, list) else str(tags or "[]")
+
+        variables = data.get("variables", [])
+        variables_json = json.dumps(variables, ensure_ascii=False) if isinstance(variables, list) else str(variables or "[]")
+
         with self._lock, self._get_conn() as conn:
             cur = conn.execute("SELECT id FROM system_entities WHERE title = ? AND platform = ?", (title, platform))
             row = cur.fetchone()
@@ -458,19 +518,19 @@ class TeamLibrary:
                 conn.execute(
                     """
                     UPDATE system_entities SET
-                        system_instructions = ?, template = ?, variables = ?, author = ?,
-                        tags = ?, model_hint = ?, temperature = ?, gdrive_file_id = ?, updated_at = ?
+                        system_instructions = ?, template = ?, variables_json = ?, author = ?,
+                        tags_json = ?, model_hint = ?, temperature = ?, gdrive_file_id = ?, updated_at = ?
                     WHERE id = ?
                     """,
                     (
                         data.get("system_instructions", ""),
                         data.get("template", ""),
-                        json.dumps(data.get("variables", []), ensure_ascii=False) if isinstance(data.get("variables"), list) else str(data.get("variables", "[]")),
+                        variables_json,
                         data.get("author", "Team Member"),
-                        json.dumps(data.get("tags", []), ensure_ascii=False) if isinstance(data.get("tags"), list) else str(data.get("tags", "[]")),
+                        tags_json,
                         data.get("model_hint", ""),
                         data.get("temperature", 0.7),
-                        gdrive_file_id,
+                        gdrive_file_id or data.get("gdrive_file_id"),
                         now,
                         eid,
                     ),
@@ -479,8 +539,13 @@ class TeamLibrary:
             else:
                 cur2 = conn.execute(
                     """
-                    INSERT INTO system_entities (workspace_id, platform, entity_type, title, system_instructions, template, variables, author, tags, model_hint, temperature, gdrive_file_id, created_at, updated_at)
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO system_entities (
+                        workspace_id, platform, entity_type, title, system_instructions, template,
+                        variables_json, author, tags_json, model_hint, temperature, gdrive_file_id,
+                        created_at, updated_at
+                    ) VALUES (
+                        1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
                     """,
                     (
                         platform,
@@ -488,17 +553,22 @@ class TeamLibrary:
                         title,
                         data.get("system_instructions", ""),
                         data.get("template", ""),
-                        json.dumps(data.get("variables", []), ensure_ascii=False) if isinstance(data.get("variables"), list) else str(data.get("variables", "[]")),
+                        variables_json,
                         data.get("author", "Team Member"),
-                        json.dumps(data.get("tags", []), ensure_ascii=False) if isinstance(data.get("tags"), list) else str(data.get("tags", "[]")),
+                        tags_json,
                         data.get("model_hint", ""),
                         data.get("temperature", 0.7),
-                        gdrive_file_id,
+                        gdrive_file_id or data.get("gdrive_file_id"),
                         data.get("created_at", now),
                         now,
                     ),
                 )
                 return cur2.lastrowid
+
+    def update_gdrive_id(self, item_type: str, item_id: int, file_id: str) -> None:
+        table = "prompts" if item_type == "prompt" else "system_entities"
+        with self._lock, self._get_conn() as conn:
+            conn.execute(f"UPDATE {table} SET gdrive_file_id = ? WHERE id = ?", (file_id, item_id))
 
     # ------------------------------------------------------------- Authentication & Users
     def login_or_register_google(self, email: str, name: str, google_id: str = "") -> dict[str, Any]:
@@ -1103,6 +1173,17 @@ class TeamLibrary:
             variables=d.get("variables", {}),
             author=d.get("author", "Member"),
             notes=d.get("notes", ""),
+            has_image=d.get("has_image", 0),
+            image_hash=d.get("image_hash"),
+            image_vault_path=d.get("image_vault_path"),
+            thumb_vault_path=d.get("thumb_vault_path"),
+            image_width=d.get("image_width"),
+            image_height=d.get("image_height"),
+            model=d.get("model", ""),
+            sampler=d.get("sampler", ""),
+            cfg_scale=d.get("cfg_scale"),
+            steps=d.get("steps"),
+            seed=d.get("seed"),
             gdrive_file_id=d.get("gdrive_file_id"),
             created_at=d.get("created_at", ""),
             updated_at=d.get("updated_at", ""),

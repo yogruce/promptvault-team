@@ -266,30 +266,63 @@ class CorporateGDriveSync:
         self._queue.put(("__stop__", 0, ""))
 
     def _worker_loop(self) -> None:
+        last_pull_time = time.time()
         while not self._stop_event.is_set():
             try:
                 item_type, item_id, action = self._queue.get(timeout=2.0)
+                if item_type == "__stop__":
+                    break
+
+                if not self.is_configured():
+                    self._queue.task_done()
+                    continue
+
+                try:
+                    self._process_sync_item(item_type, item_id, action)
+                    self._stats["synced_count"] += 1
+                    self._stats["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+                    self._stats["last_error"] = None
+                except Exception as e:
+                    self._stats["failed_count"] += 1
+                    self._stats["last_error"] = str(e)
+                finally:
+                    self._queue.task_done()
+                    self._stats["queue_pending"] = self._queue.qsize()
+
             except queue.Empty:
-                continue
+                pass
 
-            if item_type == "__stop__":
-                break
+            # Background auto-pull from Google Drive every 30 seconds if configured
+            now = time.time()
+            if (now - last_pull_time) >= 30.0 and self.is_configured() and self._queue.empty():
+                last_pull_time = now
+                try:
+                    self.pull_from_drive()
+                except Exception as e:
+                    self._stats["last_error"] = f"Arka plan senkronizasyon hatası: {e}"
 
-            if not self.is_configured():
-                self._queue.task_done()
-                continue
+    def push_to_drive(self) -> dict[str, Any]:
+        """Pushes all local prompts, entities, and policy to Google Drive."""
+        if not self.is_configured():
+            raise ValueError("Google Drive henüz yapılandırılmamış.")
 
-            try:
-                self._process_sync_item(item_type, item_id, action)
-                self._stats["synced_count"] += 1
-                self._stats["last_synced_at"] = datetime.now(timezone.utc).isoformat()
-                self._stats["last_error"] = None
-            except Exception as e:
-                self._stats["failed_count"] += 1
-                self._stats["last_error"] = str(e)
-            finally:
-                self._queue.task_done()
-                self._stats["queue_pending"] = self._queue.qsize()
+        prompts = self.lib.list_prompts_dict(limit=1000)
+        entities = self.lib.list_system_entities_dict()
+        queued = 0
+
+        for p in prompts:
+            self._queue.put(("prompt", p["id"], "upsert"))
+            queued += 1
+
+        for e in entities:
+            self._queue.put(("system_entity", e["id"], "upsert"))
+            queued += 1
+
+        self._queue.put(("company_policy", 1, "update"))
+        queued += 1
+
+        self._stats["queue_pending"] = self._queue.qsize()
+        return {"ok": True, "queued": queued}
 
     def _process_sync_item(self, item_type: str, item_id: int, action: str) -> None:
         service = self.build_service()
@@ -297,30 +330,78 @@ class CorporateGDriveSync:
         root_name = cfg.get("root_folder_name", "PromptVault Team Vault")
 
         root_id = self._get_or_create_folder(service, root_name)
-        from googleapiclient.http import MediaInMemoryUpload
+        from googleapiclient.http import MediaFileUpload, MediaInMemoryUpload
 
         if item_type == "prompt":
-            prompt = self.lib.get_prompt(item_id)
-            if not prompt:
+            p_dict = self.lib.get_prompt_dict(item_id)
+            if not p_dict:
                 return
             prompts_folder_id = self._get_or_create_folder(service, "Prompts", parent_id=root_id)
-            # Create/Update JSON file for this prompt
+
+            has_image = bool(p_dict.get("has_image"))
+            img_hash = p_dict.get("image_hash")
+            img_drive_id = None
+
+            # 1. Upload image to Google Drive Visual_Vault folder if has_image
+            if has_image and img_hash:
+                local_img = Path(p_dict.get("image_vault_path") or "")
+                if not local_img.exists():
+                    local_img = self.lib.vault_media_dir / f"{img_hash}.png"
+
+                if local_img.exists():
+                    visual_vault_folder_id = self._get_or_create_folder(service, "Visual_Vault", parent_id=root_id)
+                    img_drive_filename = f"{img_hash}.png"
+
+                    # Check if image already exists in Visual_Vault
+                    q_img = f"name = '{img_drive_filename}' and '{visual_vault_folder_id}' in parents and trashed = false"
+                    res_img = service.files().list(
+                        q=q_img, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True
+                    ).execute()
+                    files_img = res_img.get("files", [])
+                    if files_img:
+                        img_drive_id = files_img[0]["id"]
+                    else:
+                        media_img = MediaFileUpload(str(local_img), mimetype="image/png", resumable=True)
+                        body_img = {
+                            "name": img_drive_filename,
+                            "parents": [visual_vault_folder_id],
+                        }
+                        created_img = service.files().create(
+                            body=body_img,
+                            media_body=media_img,
+                            fields="id",
+                            supportsAllDrives=True,
+                        ).execute()
+                        img_drive_id = created_img["id"]
+
+            # 2. Upload prompt metadata JSON to Prompts/ folder
             data = {
-                "id": prompt.id,
-                "title": prompt.title,
-                "platform": prompt.platform,
-                "prompt_type": prompt.prompt_type,
-                "prompt": prompt.prompt,
-                "negative_prompt": prompt.negative_prompt,
-                "author": prompt.author,
-                "tags": prompt.tags,
-                "variables": prompt.variables,
-                "notes": prompt.notes,
-                "created_at": prompt.created_at,
-                "updated_at": prompt.updated_at,
+                "id": p_dict["id"],
+                "title": p_dict["title"],
+                "platform": p_dict.get("platform", "generic"),
+                "prompt_type": p_dict.get("prompt_type", "chat_text"),
+                "prompt": p_dict.get("prompt", ""),
+                "negative_prompt": p_dict.get("negative_prompt", ""),
+                "author": p_dict.get("author", "Member"),
+                "tags": p_dict.get("tags", []),
+                "variables": p_dict.get("variables", {}),
+                "notes": p_dict.get("notes", ""),
+                "has_image": 1 if has_image else 0,
+                "image_hash": img_hash,
+                "image_filename": f"{img_hash}.png" if img_hash else None,
+                "image_drive_id": img_drive_id,
+                "image_width": p_dict.get("image_width"),
+                "image_height": p_dict.get("image_height"),
+                "model": p_dict.get("model", ""),
+                "sampler": p_dict.get("sampler", ""),
+                "cfg_scale": p_dict.get("cfg_scale"),
+                "steps": p_dict.get("steps"),
+                "seed": p_dict.get("seed"),
+                "created_at": p_dict.get("created_at"),
+                "updated_at": p_dict.get("updated_at"),
             }
             body = {
-                "name": f"prompt_{prompt.id}_{prompt.platform}.json",
+                "name": f"prompt_{p_dict['id']}_{p_dict.get('platform', 'generic')}.json",
                 "parents": [prompts_folder_id],
             }
             media = MediaInMemoryUpload(
@@ -329,22 +410,25 @@ class CorporateGDriveSync:
                 resumable=False,
             )
 
-            if prompt.gdrive_file_id:
-                # Update existing file
-                service.files().update(
-                    fileId=prompt.gdrive_file_id,
-                    media_body=media,
-                    supportsAllDrives=True,
-                ).execute()
-            else:
-                # Create new
+            gdrive_file_id = p_dict.get("gdrive_file_id")
+            if gdrive_file_id:
+                try:
+                    service.files().update(
+                        fileId=gdrive_file_id,
+                        media_body=media,
+                        supportsAllDrives=True,
+                    ).execute()
+                except Exception:
+                    gdrive_file_id = None
+
+            if not gdrive_file_id:
                 created = service.files().create(
                     body=body,
                     media_body=media,
                     fields="id",
                     supportsAllDrives=True,
                 ).execute()
-                self.lib.update_gdrive_id("prompt", prompt.id, created["id"])
+                self.lib.update_gdrive_id("prompt", p_dict["id"], created["id"])
 
         elif item_type == "system_entity":
             entity = self.lib.get_system_entity(item_id)
@@ -420,7 +504,7 @@ class CorporateGDriveSync:
                 ).execute()
 
     def pull_from_drive(self) -> dict[str, Any]:
-        """Pulls team_policy.json, Prompts, and Gems_and_Skills from Google Drive into local database."""
+        """Pulls team_policy.json, Prompts, Visual_Vault images, and Gems_and_Skills from Google Drive into local database."""
         service = self.build_service()
         cfg = self.load_config()
         root_name = cfg.get("root_folder_name", "PromptVault Team Vault")
@@ -428,6 +512,7 @@ class CorporateGDriveSync:
 
         synced_policy = False
         synced_prompts = 0
+        synced_images = 0
         synced_entities = 0
 
         # 1. Pull team_policy.json
@@ -443,7 +528,18 @@ class CorporateGDriveSync:
         except Exception:
             pass
 
-        # 2. Pull Prompts folder
+        # 2. Locate Visual_Vault folder on Drive (if it exists)
+        visual_vault_folder_id = None
+        try:
+            q_vf = f"name = 'Visual_Vault' and '{root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            vf_res = service.files().list(q=q_vf, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            vf_files = vf_res.get("files", [])
+            if vf_files:
+                visual_vault_folder_id = vf_files[0]["id"]
+        except Exception:
+            pass
+
+        # 3. Pull Prompts folder
         try:
             q_pf = f"name = 'Prompts' and '{root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
             pf_res = service.files().list(q=q_pf, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
@@ -462,14 +558,48 @@ class CorporateGDriveSync:
                         try:
                             raw = service.files().get_media(fileId=f["id"], supportsAllDrives=True).execute()
                             pdata = json.loads(raw.decode("utf-8"))
+
+                            # Check for associated image in Visual_Vault
+                            has_img = bool(pdata.get("has_image"))
+                            img_hash = pdata.get("image_hash")
+                            if has_img and img_hash:
+                                local_img = self.lib.vault_media_dir / f"{img_hash}.png"
+                                local_thumb = self.lib.vault_thumbs_dir / f"thumb_{img_hash}.jpg"
+
+                                # If image file doesn't exist locally, download it from Visual_Vault on Drive
+                                if not local_img.exists() and visual_vault_folder_id:
+                                    img_fn = pdata.get("image_filename") or f"{img_hash}.png"
+                                    q_find_img = f"name = '{img_fn}' and '{visual_vault_folder_id}' in parents and trashed = false"
+                                    img_search = service.files().list(
+                                        q=q_find_img, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True
+                                    ).execute()
+                                    found_imgs = img_search.get("files", [])
+                                    if found_imgs:
+                                        img_bytes = service.files().get_media(fileId=found_imgs[0]["id"], supportsAllDrives=True).execute()
+                                        local_img.write_bytes(img_bytes)
+                                        synced_images += 1
+
+                                if local_img.exists():
+                                    pdata["image_vault_path"] = str(local_img)
+                                    if not local_thumb.exists():
+                                        try:
+                                            from PIL import Image
+                                            im = Image.open(local_img)
+                                            im.thumbnail((400, 400))
+                                            im.convert("RGB").save(local_thumb, "JPEG", quality=85)
+                                        except Exception:
+                                            pass
+                                    if local_thumb.exists():
+                                        pdata["thumb_vault_path"] = str(local_thumb)
+
                             self.lib.upsert_remote_prompt(pdata, gdrive_file_id=f["id"])
                             synced_prompts += 1
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            self._stats["last_error"] = f"Prompt çekme hatası ({f.get('name')}): {e}"
         except Exception:
             pass
 
-        # 3. Pull Gems_and_Skills folder
+        # 4. Pull Gems_and_Skills folder
         try:
             q_gf = f"name = 'Gems_and_Skills' and '{root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
             gf_res = service.files().list(q=q_gf, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
@@ -490,8 +620,8 @@ class CorporateGDriveSync:
                             edata = json.loads(raw.decode("utf-8"))
                             self.lib.upsert_remote_entity(edata, gdrive_file_id=f["id"])
                             synced_entities += 1
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            self._stats["last_error"] = f"Gem çekme hatası ({f.get('name')}): {e}"
         except Exception:
             pass
 
@@ -499,5 +629,6 @@ class CorporateGDriveSync:
             "ok": True,
             "synced_policy": synced_policy,
             "synced_prompts": synced_prompts,
+            "synced_images": synced_images,
             "synced_entities": synced_entities,
         }

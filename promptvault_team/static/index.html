@@ -476,12 +476,16 @@
       <button class="nav-btn" id="nav-btn-playground" onclick="switchTab('playground')">⚡ API Test</button>
     </nav>
 
-    <!-- AUTH USER BADGE -->
-    <button class="user-auth-btn" id="btn-auth-user" onclick="handleAuthClick()">
-      <span id="header-user-avatar">👤</span>
-      <span id="header-user-name">Giriş Yap</span>
-      <span class="role-badge role-editor" id="header-user-role" style="display: none;">ÜYE</span>
-    </button>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <button class="btn btn-ghost" style="padding: 6px 12px; font-size: 12.5px; border: 1px solid rgba(255,255,255,0.12); gap: 6px;" onclick="pullFromDrive()" title="Google Drive ile Şimdi Eşitle">🔄 Eşitle</button>
+
+      <!-- AUTH USER BADGE -->
+      <button class="user-auth-btn" id="btn-auth-user" onclick="handleAuthClick()">
+        <span id="header-user-avatar">👤</span>
+        <span id="header-user-name">Giriş Yap</span>
+        <span class="role-badge role-editor" id="header-user-role" style="display: none;">ÜYE</span>
+      </button>
+    </div>
   </header>
 
   <!-- MAIN -->
@@ -566,10 +570,11 @@
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
             Yöneticinizin sizinle paylaştığı Ekip Bağlantı Kodunu (PVTEAM_...) buraya yapıştırarak şirketin paylaşılan kasasına bağlanabilirsiniz:
           </p>
-          <div style="display: flex; gap: 10px;">
-            <input type="text" id="client-connect-token-input" class="form-input" style="flex: 1;" placeholder="PVTEAM_... ile başlayan kodu yapıştırın">
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="client-connect-token-input" class="form-input" style="flex: 1; min-width: 250px;" placeholder="PVTEAM_... ile başlayan kodu yapıştırın">
             <button class="btn btn-primary" onclick="applyClientConnectToken()">🚀 Bağlan & Eşitle</button>
             <button class="btn btn-secondary" onclick="pullFromDrive()">🔄 Drive'dan Yenile</button>
+            <button class="btn btn-secondary" onclick="pushToDrive()">⬆️ Drive'a Gönder</button>
           </div>
         </div>
 
@@ -1230,13 +1235,30 @@
         const res = await fetch('/api/team/gdrive/pull', { method: 'POST' });
         const d = await res.json();
         if (res.ok) {
-          showToast(`✅ Eşitleme tamamlandı! (${d.synced_prompts || 0} prompt, ${d.synced_entities || 0} gem güncellendi)`);
+          const imgText = d.synced_images ? `, ${d.synced_images} görsel` : '';
+          showToast(`✅ Eşitleme tamamlandı! (${d.synced_prompts || 0} prompt${imgText}, ${d.synced_entities || 0} gem)`);
           loadVault();
           loadEntities();
           if (currentUser && currentUser.role === 'admin') loadCompanyPolicy();
           loadDriveStatus();
         } else {
           alert(d.detail || 'Drive senkronizasyonu başarısız.');
+        }
+      } catch (e) {
+        alert('Hata: ' + e);
+      }
+    }
+
+    async function pushToDrive() {
+      showToast('⬆️ Yerel kasa Google Drive\'a aktarılıyor...');
+      try {
+        const res = await fetch('/api/team/gdrive/push', { method: 'POST' });
+        const d = await res.json();
+        if (res.ok) {
+          showToast(`✅ ${d.queued || 0} kayıt Drive kuyruğuna alındı ve arka planda yükleniyor!`);
+          loadDriveStatus();
+        } else {
+          alert(d.detail || 'Drive\'a aktarma başarısız.');
         }
       } catch (e) {
         alert('Hata: ' + e);

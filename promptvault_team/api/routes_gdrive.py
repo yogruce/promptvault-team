@@ -45,7 +45,7 @@ def create_gdrive_router(gdrive_sync: CorporateGDriveSync) -> APIRouter:
 
     @router.post("/pull")
     def pull_drive():
-        """Pulls prompts, gems, skills, and policy from Google Drive."""
+        """Pulls prompts, gems, skills, visual vault images, and policy from Google Drive."""
         if not gdrive_sync.is_configured():
             raise HTTPException(400, "Google Drive henüz yapılandırılmamış.")
         try:
@@ -53,6 +53,17 @@ def create_gdrive_router(gdrive_sync: CorporateGDriveSync) -> APIRouter:
             return res
         except Exception as e:
             raise HTTPException(500, f"Drive'dan veri çekme başarısız: {e}")
+
+    @router.post("/push")
+    def push_drive():
+        """Pushes all local prompts, visual vault images, and system entities to Google Drive."""
+        if not gdrive_sync.is_configured():
+            raise HTTPException(400, "Google Drive henüz yapılandırılmamış.")
+        try:
+            res = gdrive_sync.push_to_drive()
+            return res
+        except Exception as e:
+            raise HTTPException(500, f"Drive'a gönderme başarısız: {e}")
 
     @router.get("/connect-token")
     def get_connect_token():
