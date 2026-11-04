@@ -14,10 +14,12 @@ from .api import (
     create_execution_router,
     create_gdrive_router,
     create_prompts_router,
+    create_system_router,
     create_workspaces_router,
 )
 from .db import TeamLibrary
 from .gdrive_service import CorporateGDriveSync
+from .updater import AppUpdater
 
 
 def create_team_app(
@@ -31,6 +33,7 @@ def create_team_app(
 
     lib = TeamLibrary(data_dir=data_dir, mode=mode)
     gdrive_sync = CorporateGDriveSync(lib=lib)
+    updater = AppUpdater()
     static_dir = Path(__file__).resolve().parent / "static"
 
     @asynccontextmanager
@@ -97,6 +100,7 @@ def create_team_app(
     app.include_router(create_workspaces_router(lib))
     app.include_router(create_gdrive_router(gdrive_sync))
     app.include_router(create_execution_router(lib))
+    app.include_router(create_system_router(updater))
 
     # Mount static directory
     if static_dir.exists():

@@ -477,6 +477,12 @@
     </nav>
 
     <div style="display: flex; align-items: center; gap: 8px;">
+      <!-- GITHUB UPDATE BUTTON -->
+      <button id="btn-update-badge" class="btn btn-ghost" style="padding: 6px 12px; font-size: 12.5px; border: 1px solid rgba(255,255,255,0.12); gap: 6px; display: inline-flex; align-items: center;" onclick="openUpdateModal()" title="GitHub Sürüm ve Güncellemeleri Denetle">
+        <span id="update-badge-icon">⚡</span>
+        <span id="update-badge-text">Sürüm</span>
+      </button>
+
       <button class="btn btn-ghost" style="padding: 6px 12px; font-size: 12.5px; border: 1px solid rgba(255,255,255,0.12); gap: 6px;" onclick="pullFromDrive()" title="Google Drive ile Şimdi Eşitle">🔄 Eşitle</button>
 
       <!-- AUTH USER BADGE -->
@@ -1005,6 +1011,53 @@
         <button class="btn btn-primary" onclick="submitDriveConfig()">Kaydet & Doğrula</button>
       </div>
     </div>
+  </div>
+
+  <!-- MODAL: GITHUB UPDATE -->
+  <div class="modal-overlay" id="modal-update">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>🚀</span> <span>Sistem Sürümü & Otomatik Güncelleme</span>
+        </div>
+        <button class="close-btn" onclick="closeModal('modal-update')">×</button>
+      </div>
+
+      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span style="color: var(--text-muted); font-size: 13px;">Mevcut Yerel Sürüm:</span>
+          <span id="update-modal-local-commit" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 3px 8px; border-radius: 6px; font-size: 12.5px;">-</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span style="color: var(--text-muted); font-size: 13px;">GitHub En Son Sürüm:</span>
+          <span id="update-modal-remote-commit" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #a5b4fc; background: rgba(99, 102, 241, 0.1); padding: 3px 8px; border-radius: 6px; font-size: 12.5px;">-</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="color: var(--text-muted); font-size: 13px;">Durum:</span>
+          <span id="update-modal-status-badge" style="font-weight: 600; font-size: 12.5px; color: #10b981;">Kontrol ediliyor...</span>
+        </div>
+      </div>
+
+      <div id="update-modal-message-box" style="font-size: 13px; color: #94a3b8; background: #080c14; border: 1px solid #1a2333; border-radius: 8px; padding: 12px; margin-bottom: 20px; min-height: 48px; line-height: 1.5;">
+        Bilgiler alınıyor...
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <a href="https://github.com/yogruce/promptvault-team" target="_blank" style="color: #64748b; font-size: 12px; text-decoration: none;">GitHub Reposu ↗</a>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-secondary" id="btn-update-check-now" onclick="checkVersionAndUpdates(false)">🔍 Kontrol Et</button>
+          <button class="btn btn-primary" id="btn-update-apply-now" onclick="applyUpdateNow()" style="display: none; background: linear-gradient(135deg, #10b981, #059669);">🚀 Şimdi Güncelle ve Yeniden Başlat</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESTART OVERLAY -->
+  <div id="restart-overlay" style="display: none; position: fixed; inset: 0; background: rgba(7, 10, 19, 0.95); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px);">
+    <div style="width: 54px; height: 54px; border: 4px solid rgba(99,102,241,0.2); border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 24px;"></div>
+    <h2 style="font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 10px;" id="restart-overlay-title">Uygulama Güncellendi!</h2>
+    <p style="color: #94a3b8; font-size: 14.5px; text-align: center; max-width: 440px;" id="restart-overlay-desc">Yeni sürüm dosyaları indirildi. Sunucu yeniden başlatılıyor, sayfa otomatik olarak yenilenecek...</p>
+    <div id="restart-countdown" style="margin-top: 16px; font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #38bdf8; font-weight: 700;"></div>
   </div>
 
   <!-- TOAST -->
@@ -2074,6 +2127,153 @@
     checkAppMode();
     initAuth();
     loadVault();
+    checkVersionAndUpdates(true);
+    setInterval(() => checkVersionAndUpdates(true), 10 * 60 * 1000);
+
+    // ==========================================
+    // AUTO-UPDATE & VERSION LOGIC
+    // ==========================================
+    let updateState = {
+      localCommit: 'v2.0',
+      remoteCommit: 'v2.0',
+      hasUpdate: false,
+      remoteMessage: '',
+      checkedAt: null
+    };
+
+    async function checkVersionAndUpdates(silent = false) {
+      try {
+        const badgeBtn = document.getElementById('btn-update-badge');
+        const badgeText = document.getElementById('update-badge-text');
+        const badgeIcon = document.getElementById('update-badge-icon');
+
+        const res = await fetch('/api/system/check-update' + (silent ? '' : '?force=true'));
+        if (!res.ok) return;
+        const d = await res.json();
+        updateState = {
+          localCommit: d.local_commit || 'v2.0',
+          remoteCommit: d.remote_commit || d.local_commit,
+          hasUpdate: !!d.has_update,
+          remoteMessage: d.remote_message || d.local_message || '',
+          checkedAt: d.checked_at
+        };
+
+        if (badgeText) badgeText.textContent = updateState.localCommit;
+
+        if (updateState.hasUpdate) {
+          if (badgeBtn) {
+            badgeBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+            badgeBtn.style.color = '#fff';
+            badgeBtn.style.border = 'none';
+            badgeBtn.style.boxShadow = '0 0 15px rgba(16, 185, 129, 0.4)';
+          }
+          if (badgeIcon) badgeIcon.textContent = '🚀';
+          if (badgeText) badgeText.textContent = 'Yeni Sürüm!';
+          if (!silent) {
+            showToast('✨ GitHub üzerinde yeni bir sürüm tespit edildi!');
+          }
+        } else {
+          if (badgeBtn) {
+            badgeBtn.style.background = '';
+            badgeBtn.style.color = '';
+            badgeBtn.style.border = '1px solid rgba(255,255,255,0.12)';
+            badgeBtn.style.boxShadow = '';
+          }
+          if (badgeIcon) badgeIcon.textContent = '⚡';
+          if (badgeText) badgeText.textContent = updateState.localCommit;
+          if (!silent) {
+            showToast('✅ Uygulamanız en son sürümde (Güncel)');
+          }
+        }
+
+        renderUpdateModal();
+      } catch (e) {
+        console.warn('Update check failed:', e);
+      }
+    }
+
+    function openUpdateModal() {
+      renderUpdateModal();
+      openModal('modal-update');
+      checkVersionAndUpdates(false);
+    }
+
+    function renderUpdateModal() {
+      const localEl = document.getElementById('update-modal-local-commit');
+      const remoteEl = document.getElementById('update-modal-remote-commit');
+      const badgeEl = document.getElementById('update-modal-status-badge');
+      const msgEl = document.getElementById('update-modal-message-box');
+      const applyBtn = document.getElementById('btn-update-apply-now');
+
+      if (localEl) localEl.textContent = updateState.localCommit || '-';
+      if (remoteEl) remoteEl.textContent = updateState.remoteCommit || '-';
+
+      if (updateState.hasUpdate) {
+        if (badgeEl) {
+          badgeEl.textContent = '✨ Yeni Güncelleme Mevcut';
+          badgeEl.style.color = '#10b981';
+        }
+        if (msgEl) {
+          msgEl.innerHTML = `<strong>Yeni Sürüm Değişikliği:</strong><br>${escapeHtml(updateState.remoteMessage || 'Hata düzeltmeleri ve yeni özellikler.')}`;
+        }
+        if (applyBtn) applyBtn.style.display = 'inline-flex';
+      } else {
+        if (badgeEl) {
+          badgeEl.textContent = '✅ En Son Sürüm (Güncel)';
+          badgeEl.style.color = '#38bdf8';
+        }
+        if (msgEl) {
+          msgEl.innerHTML = `<strong>Mevcut Commit:</strong> ${escapeHtml(updateState.localCommit)}<br>${escapeHtml(updateState.remoteMessage || 'Uygulama tamamen güncel.')}`;
+        }
+        if (applyBtn) applyBtn.style.display = 'none';
+      }
+    }
+
+    async function applyUpdateNow() {
+      if (!confirm('GitHub üzerindeki en son sürüm indirilecek ve uygulama yeniden başlatılacak. Devam etmek istiyor musunuz?')) {
+        return;
+      }
+
+      const applyBtn = document.getElementById('btn-update-apply-now');
+      if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.textContent = '⏳ Güncelleniyor...';
+      }
+
+      try {
+        const res = await fetch('/api/system/apply-update', { method: 'POST' });
+        const d = await res.json();
+        if (res.ok && d.ok) {
+          closeModal('modal-update');
+          showRestartOverlay();
+        } else {
+          alert('Güncelleme sırasında bir hata oluştu: ' + (d.detail || d.message || 'Bilinmeyen hata'));
+          if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.textContent = '🚀 Şimdi Güncelle ve Yeniden Başlat';
+          }
+        }
+      } catch (e) {
+        closeModal('modal-update');
+        showRestartOverlay();
+      }
+    }
+
+    function showRestartOverlay() {
+      const overlay = document.getElementById('restart-overlay');
+      if (overlay) overlay.style.display = 'flex';
+
+      let remaining = 6;
+      const countEl = document.getElementById('restart-countdown');
+      const timer = setInterval(() => {
+        remaining--;
+        if (countEl) countEl.textContent = remaining > 0 ? `Yeniden bağlanılıyor (${remaining}s)...` : 'Yenileniyor...';
+        if (remaining <= 0) {
+          clearInterval(timer);
+          window.location.reload();
+        }
+      }, 1000);
+    }
   </script>
 </body>
 </html>

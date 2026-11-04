@@ -386,3 +386,42 @@ def test_gdrive_image_sync_and_pull_simulation(tmp_path):
     assert pc2_prompts[0]["image_vault_path"] == str(pc2_img_file)
     assert pc2_prompts[0]["thumb_vault_path"] == str(pc2_thumb_file)
 
+
+def test_app_updater_and_system_endpoints(tmp_path):
+    from unittest.mock import patch, MagicMock
+    from promptvault_team.updater import AppUpdater
+    from promptvault_team.app import create_team_app
+    from fastapi.testclient import TestClient
+
+    updater = AppUpdater(repo_dir=tmp_path)
+    # Since tmp_path is not a git repo:
+    assert updater.is_git_repo() is False
+    ver = updater.get_local_commit()
+    assert "commit" in ver
+
+    # Mock git repo and check_for_updates
+    (tmp_path / ".git").mkdir()
+    assert updater.is_git_repo() is True
+
+    with patch.object(updater, "get_local_commit", return_value={"commit": "abc1234", "message": "Initial", "date": "today"}):
+        with patch("subprocess.run") as mock_sub:
+            # Mock git rev-parse origin/main returning a new hash
+            mock_sub.return_value = MagicMock(returncode=0, stdout="def5678\n")
+            res = updater.check_for_updates(force=True)
+            assert res["local_commit"] == "abc1234"
+            assert res["remote_commit"] == "def5678"
+            assert res["has_update"] is True
+
+    # Test FastAPI endpoints
+    app = create_team_app(data_dir=tmp_path / "data", mode="admin", auto_close=False)
+    client = TestClient(app)
+
+    res_ver = client.get("/api/system/version")
+    assert res_ver.status_code == 200
+    assert "commit" in res_ver.json()
+
+    res_chk = client.get("/api/system/check-update")
+    assert res_chk.status_code == 200
+    assert "has_update" in res_chk.json()
+
+
