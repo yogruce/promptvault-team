@@ -1,10 +1,13 @@
 @echo off
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
 title PromptVault Team - Yonetici (Admin)
 cd /d "%~dp0"
 
 echo ========================================================
 echo   PromptVault Team - YONETICI (ADMIN) SURUMU
-echo   Gems, Custom GPTs, Skills ^& Kurumsal Drive Yonetimi
+echo   Gems, Custom GPTs, Skills ve Kurumsal Drive Yonetimi
 echo ========================================================
 echo.
 
@@ -15,7 +18,7 @@ if not exist .venv\Scripts\python.exe (
 
 :: Paketlerin kurulu olup olmadigini kontrol et
 .venv\Scripts\python.exe -c "import uvicorn, fastapi" >nul 2>&1
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     echo [BILGI] Gerekli kutuphaneler yukleniyor, lutfen bekleyin...
     .venv\Scripts\python.exe -m pip install --upgrade pip
     .venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -23,35 +26,34 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :START_APP
-:: GitHub Otomatik Guncelleme Kontrolu (Git varsa)
+:: GitHub Otomatik Guncelleme Kontrolu
 where git >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    if exist .git (
-        echo [KONTROL] GitHub guncellemeleri denetleniyor...
-        git fetch origin main >nul 2>&1
-        set LOCAL_HASH=
-        set REMOTE_HASH=
-        for /f "tokens=*" %%i in ('git rev-parse HEAD 2^>nul') do set LOCAL_HASH=%%i
-        for /f "tokens=*" %%i in ('git rev-parse origin/main 2^>nul') do set REMOTE_HASH=%%i
-        if not "%LOCAL_HASH%"=="" if not "%REMOTE_HASH%"=="" (
-            if not "%LOCAL_HASH%"=="%REMOTE_HASH%" (
-                echo.
-                echo ========================================================
-                echo   [GUNCELLEME] GitHub'da yeni bir surum tespit edildi!
-                echo   Guncel dosyalar indiriliyor (git pull)...
-                echo ========================================================
-                git pull origin main
-                if exist requirements.txt (
-                    .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
-                )
-                .venv\Scripts\python.exe -m pip install -e . --no-deps --quiet
-                echo   [BASARILI] Uygulama en son surume guncellendi.
-                echo.
-            )
-        )
-    )
-)
+if errorlevel 1 goto :AFTER_UPDATE_CHECK
+if not exist .git goto :AFTER_UPDATE_CHECK
 
+echo [KONTROL] GitHub guncellemeleri denetleniyor...
+git fetch origin main >nul 2>&1
+git rev-parse HEAD > "%TEMP%\pvt_local.txt" 2>nul
+git rev-parse origin/main > "%TEMP%\pvt_remote.txt" 2>nul
+
+fc "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo ========================================================
+    echo   [GUNCELLEME] GitHub'da yeni bir surum tespit edildi!
+    echo   Guncel dosyalar indiriliyor...
+    echo ========================================================
+    git pull origin main
+    if exist requirements.txt (
+        .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
+    )
+    .venv\Scripts\python.exe -m pip install -e . --no-deps --quiet
+    echo   [BASARILI] Uygulama en son surume guncellendi.
+    echo.
+)
+del "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
+
+:AFTER_UPDATE_CHECK
 :: 7861 portunu tutan eski sureci sonlandir
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7861 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
@@ -70,7 +72,7 @@ if "%APP_EXIT_CODE%"=="42" (
     echo   [YENIDEN BASLATMA] Guncelleme sonrasi baslatiliyor...
     echo ========================================================
     timeout /t 2 /nobreak >nul
-    goto START_APP
+    goto :START_APP
 )
 
 if %APP_EXIT_CODE% neq 0 (

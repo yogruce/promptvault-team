@@ -24,6 +24,13 @@ def _free_port_windows(port: int) -> None:
 
 
 def main() -> int:
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         prog="promptvault_team",
         description="PromptVault Team Edition - ChatGPT, Gemini, Claude, Gems & Google Workspace Drive Sync",
@@ -48,10 +55,10 @@ def main() -> int:
     from promptvault_team.app import create_team_app
 
     url = f"http://{'127.0.0.1' if args.host == '0.0.0.0' else args.host}:{port}"
-    print(f"\n========================================================")
-    print(f"🚀 PromptVault Team Sunucusu ({args.role.upper()} Modu): {url}")
-    print(f"◈ ChatGPT, Gemini, Claude, Gems/Skills & Kurumsal Drive")
-    print(f"========================================================\n")
+    print("\n========================================================")
+    print(f"[*] PromptVault Team Sunucusu ({args.role.upper()} Modu): {url}")
+    print("[*] ChatGPT, Gemini, Claude, Gems/Skills & Kurumsal Drive")
+    print("========================================================\n")
 
     if args.open:
         import threading
