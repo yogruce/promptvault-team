@@ -28,8 +28,8 @@ if errorlevel 1 (
 :START_APP
 :: GitHub Otomatik Guncelleme Kontrolu
 where git >nul 2>&1
-if errorlevel 1 goto :AFTER_UPDATE_CHECK
-if not exist .git goto :AFTER_UPDATE_CHECK
+if errorlevel 1 goto :CHECK_ZIP_UPDATE
+if not exist .git goto :CHECK_ZIP_UPDATE
 
 echo [KONTROL] GitHub guncellemeleri denetleniyor...
 git fetch origin main >nul 2>&1
@@ -52,6 +52,25 @@ if errorlevel 1 (
     echo.
 )
 del "%TEMP%\pvt_local.txt" "%TEMP%\pvt_remote.txt" >nul 2>&1
+goto :AFTER_UPDATE_CHECK
+
+:CHECK_ZIP_UPDATE
+echo [KONTROL] GitHub guncellemeleri denetleniyor...
+.venv\Scripts\python.exe -c "import sys; from promptvault_team.updater import AppUpdater; sys.exit(42 if AppUpdater().check_for_updates().get('has_update') else 0)" >nul 2>&1
+if errorlevel 42 (
+    echo.
+    echo ========================================================
+    echo   [GUNCELLEME] GitHub'da yeni bir surum tespit edildi!
+    echo   Guncel ZIP paketi indiriliyor ve kuruluyor...
+    echo ========================================================
+    .venv\Scripts\python.exe -c "from promptvault_team.updater import AppUpdater; AppUpdater().apply_update()"
+    if exist requirements.txt (
+        .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet
+    )
+    .venv\Scripts\python.exe -m pip install -e . --no-deps --quiet
+    echo   [BASARILI] Uygulama en son surume guncellendi.
+    echo.
+)
 
 :AFTER_UPDATE_CHECK
 :: 7862 portunu tutan eski sureci sonlandir

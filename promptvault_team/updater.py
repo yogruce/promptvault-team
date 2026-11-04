@@ -187,6 +187,8 @@ class AppUpdater:
 
         return status
 
+    check_update = check_for_updates
+
     def apply_update(self) -> dict[str, Any]:
         """Updates the application via git pull or GitHub ZIP archive, then schedules server restart."""
         update_method = "git"
