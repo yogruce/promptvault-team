@@ -448,4 +448,38 @@ def test_push_to_drive_queuing(tmp_path):
     assert sync._queue.qsize() >= 3
 
 
+def test_updater_zip_fallback(tmp_path):
+    import io
+    import zipfile
+    from unittest.mock import patch, MagicMock
+    from promptvault_team.updater import AppUpdater
+
+    target_dir = tmp_path / "app_dir"
+    target_dir.mkdir()
+
+    # Create dummy in-memory zip
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("promptvault-team-main/version_test.txt", "v2.1-success")
+        zf.writestr("promptvault-team-main/promptvault_team/__init__.py", "# team")
+    zip_bytes = buf.getvalue()
+
+    updater = AppUpdater(repo_dir=target_dir)
+    assert updater.is_git_repo() is False
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = zip_bytes
+    mock_cm = MagicMock()
+    mock_cm.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_cm), \
+         patch("subprocess.run"), \
+         patch("threading.Thread"):
+        res = updater.apply_update()
+        assert res["ok"] is True
+        assert (target_dir / "version_test.txt").read_text() == "v2.1-success"
+        assert (target_dir / ".version").exists()
+
+
+
 
