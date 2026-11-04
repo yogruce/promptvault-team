@@ -587,6 +587,18 @@
         <button class="btn btn-primary" onclick="openDriveModal()">⚙️ Drive Ayarları</button>
       </div>
 
+      <!-- SERVICE ACCOUNT EMAIL BANNER & WARNING BOX -->
+      <div id="drive-sa-banner" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; font-weight: 700;">Google Service Account E-postası:</div>
+          <div id="display-sa-email" style="font-family: 'JetBrains Mono', monospace; font-size: 13.5px; color: #38bdf8; font-weight: 600; margin-top: 3px; word-break: break-all;">Yüklenmedi</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Ortak Drive (Shared Drive) kullanıyorsanız bu e-postayı Google Drive'daki Ortak Drive'ınıza <strong>"İçerik Yöneticisi"</strong> yetkisiyle ekleyin.</div>
+        </div>
+        <button class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px; flex-shrink: 0;" onclick="copySaEmail()">📋 E-postayı Kopyala</button>
+      </div>
+
+      <div id="drive-error-banner" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: #fca5a5; font-size: 13px; line-height: 1.5;"></div>
+
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
         <div class="card" style="padding: 16px;">
           <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Bağlantı Durumu</div>
@@ -1002,9 +1014,22 @@
         <label class="form-label">Service Account JSON Dosyası:</label>
         <input type="file" id="sa-file-input" class="form-input" accept=".json">
       </div>
+
+      <div id="modal-sa-email-box" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+        <div style="font-size: 11px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Yüklü Service Account E-postası:</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px;">
+          <span id="modal-sa-email-text" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #38bdf8; word-break: break-all;">-</span>
+          <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px; flex-shrink: 0;" onclick="copySaEmail()">Kopyala</button>
+        </div>
+      </div>
+
       <div class="form-group">
         <label class="form-label">Ortak Drive ID (Opsiyonel):</label>
-        <input type="text" id="drive-shared-id" class="form-input" placeholder="Örn: 0ABcDeF12345678">
+        <input type="text" id="drive-shared-id" class="form-input" placeholder="Örn: 0ABcDeF12345678 (veya boş bırakın)">
+        <p style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;">
+          💡 <strong>Önemli İpucu:</strong> Ortak Drive kullanmak istemiyorsanız bu kutuyu <strong>BOŞ BIRAKIN</strong> (Standart alan kullanılır).<br>
+          Eğer buraya Ortak Drive ID girdiyseniz, yukarıdaki Service Account e-postasını Google Drive web arayüzünde Ortak Drive'ınıza <strong>"İçerik Yöneticisi"</strong> veya <strong>"Yönetici"</strong> yetkisiyle üye eklemelisiniz.
+        </p>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
         <button class="btn btn-secondary" onclick="closeModal('modal-drive')">Kapat</button>
@@ -2013,8 +2038,43 @@
         if (driveSharedInp && !driveSharedInp.value && config.shared_drive_id) {
           driveSharedInp.value = config.shared_drive_id;
         }
+
+        const saEmail = status.service_account_email || '';
+        const displaySaEl = document.getElementById('display-sa-email');
+        if (displaySaEl) displaySaEl.textContent = saEmail || 'Service Account JSON henüz yüklenmedi';
+
+        const modalSaBox = document.getElementById('modal-sa-email-box');
+        const modalSaText = document.getElementById('modal-sa-email-text');
+        if (modalSaBox && modalSaText) {
+          if (saEmail) {
+            modalSaBox.style.display = 'block';
+            modalSaText.textContent = saEmail;
+          } else {
+            modalSaBox.style.display = 'none';
+          }
+        }
+
+        const errBanner = document.getElementById('drive-error-banner');
+        if (errBanner) {
+          if (status.last_error) {
+            errBanner.style.display = 'block';
+            errBanner.innerHTML = '⚠️ <strong>Drive Bağlantı Durumu:</strong><br>' + escapeHtml(status.last_error).replace(/\n/g, '<br>');
+          } else {
+            errBanner.style.display = 'none';
+          }
+        }
       } catch (e) {
         console.warn('Drive status load error:', e);
+      }
+    }
+
+    function copySaEmail() {
+      const saEl = document.getElementById('display-sa-email') || document.getElementById('modal-sa-email-text');
+      const text = saEl ? saEl.textContent.trim() : '';
+      if (text && text.includes('@')) {
+        copyText(text);
+      } else {
+        alert('Service Account e-postası henüz bulunamadı. Lütfen önce Service Account JSON dosyasını yükleyin.');
       }
     }
 

@@ -176,18 +176,36 @@ class CorporateGDriveSync:
         from googleapiclient.discovery import build
         return build("drive", "v3", credentials=creds)
 
+    def get_service_account_email(self) -> str:
+        if self.service_account_file.exists():
+            try:
+                data = json.loads(self.service_account_file.read_text(encoding="utf-8"))
+                return data.get("client_email", "")
+            except Exception:
+                pass
+        return ""
+
     def _test_connection(self) -> bool:
         try:
             service = self.build_service()
             cfg = self.load_config()
-            shared_drive_id = cfg.get("shared_drive_id")
-            drive_name = "My Drive / Service Account Space"
+            shared_drive_id = (cfg.get("shared_drive_id") or "").strip()
+            drive_name = "My Drive / Standart Alan"
             if shared_drive_id:
                 try:
                     drive_info = service.drives().get(driveId=shared_drive_id).execute()
                     drive_name = drive_info.get("name", shared_drive_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    sa_email = self.get_service_account_email()
+                    self._stats["is_connected"] = False
+                    self._stats["shared_drive_id"] = shared_drive_id
+                    self._stats["shared_drive_name"] = f"Erişilemedi ({shared_drive_id})"
+                    self._stats["last_error"] = (
+                        f"Ortak Drive'a ({shared_drive_id}) erişilemedi (404 Not Found).\n"
+                        f"Lütfen Google Drive'da bu Ortak Drive'a sağ tıklayıp 'Üyeleri Yönet' diyerek "
+                        f"Service Account e-postasını ({sa_email}) 'İçerik Yöneticisi' olarak ekleyin."
+                    )
+                    return False
             self._stats["is_connected"] = True
             self._stats["shared_drive_id"] = shared_drive_id or ""
             self._stats["shared_drive_name"] = drive_name
@@ -201,26 +219,18 @@ class CorporateGDriveSync:
     def get_status(self) -> dict[str, Any]:
         self._stats["queue_pending"] = self._queue.qsize()
         self._stats["is_configured"] = self.is_configured()
+        self._stats["service_account_email"] = self.get_service_account_email()
         return dict(self._stats)
 
     # ------------------------------------------------------------- Drive Folder Management
-    def _get_or_create_folder(self, service, folder_name: str, parent_id: str | None = None) -> str:
-        cache_key = f"{parent_id}:{folder_name}"
-        if cache_key in self._folder_cache:
-            return self._folder_cache[cache_key]
-
+    def _drive_list(self, service, q: str, fields: str = "files(id, name)", page_size: int = 1000) -> list[dict[str, Any]]:
         cfg = self.load_config()
-        shared_drive_id = cfg.get("shared_drive_id")
-
-        q = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        if parent_id:
-            q += f" and '{parent_id}' in parents"
-        elif shared_drive_id:
-            q += f" and '{shared_drive_id}' in parents"
+        shared_drive_id = (cfg.get("shared_drive_id") or "").strip()
 
         kwargs: dict[str, Any] = {
             "q": q,
-            "fields": "files(id, name)",
+            "fields": fields,
+            "pageSize": page_size,
             "supportsAllDrives": True,
             "includeItemsFromAllDrives": True,
         }
@@ -228,8 +238,38 @@ class CorporateGDriveSync:
             kwargs["corpora"] = "drive"
             kwargs["driveId"] = shared_drive_id
 
-        res = service.files().list(**kwargs).execute()
-        files = res.get("files", [])
+        try:
+            res = service.files().list(**kwargs).execute()
+            return res.get("files", [])
+        except Exception as e:
+            err_str = str(e)
+            if shared_drive_id and ("404" in err_str or "File not found" in err_str or "notFound" in err_str):
+                sa_email = self.get_service_account_email()
+                drive_label = self._stats.get("shared_drive_name") or shared_drive_id
+                raise RuntimeError(
+                    f"Google Ortak Drive'a ({drive_label}) erişilemedi (404 Not Found).\n"
+                    f"Çözüm: Lütfen Google Drive web arayüzünde bu Ortak Drive'a sağ tıklayıp "
+                    f"'Üyeleri Yönet' diyerek Service Account e-postasını ({sa_email}) "
+                    f"'İçerik Yöneticisi' (Content Manager) veya 'Yönetici' yetkisiyle ekleyin.\n"
+                    f"(Veya Ortak Drive kullanmak istemiyorsanız Drive Ayarları'ndan 'Ortak Drive ID' kutusunu boşaltıp kaydedin.)"
+                )
+            raise
+
+    def _get_or_create_folder(self, service, folder_name: str, parent_id: str | None = None) -> str:
+        cache_key = f"{parent_id}:{folder_name}"
+        if cache_key in self._folder_cache:
+            return self._folder_cache[cache_key]
+
+        cfg = self.load_config()
+        shared_drive_id = (cfg.get("shared_drive_id") or "").strip()
+
+        q = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        if parent_id:
+            q += f" and '{parent_id}' in parents"
+        elif shared_drive_id:
+            q += f" and '{shared_drive_id}' in parents"
+
+        files = self._drive_list(service, q=q, fields="files(id, name)")
         if files:
             fid = files[0]["id"]
             self._folder_cache[cache_key] = fid
@@ -248,10 +288,23 @@ class CorporateGDriveSync:
         if parents:
             meta["parents"] = parents
 
-        created = service.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
-        fid = created["id"]
-        self._folder_cache[cache_key] = fid
-        return fid
+        try:
+            created = service.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
+            fid = created["id"]
+            self._folder_cache[cache_key] = fid
+            return fid
+        except Exception as e:
+            err_str = str(e)
+            if shared_drive_id and ("404" in err_str or "File not found" in err_str or "notFound" in err_str):
+                sa_email = self.get_service_account_email()
+                drive_label = self._stats.get("shared_drive_name") or shared_drive_id
+                raise RuntimeError(
+                    f"Google Ortak Drive'a ({drive_label}) '{folder_name}' klasörü oluşturulamadı (404 Not Found).\n"
+                    f"Çözüm: Lütfen Google Drive'da bu Ortak Drive'a sağ tıklayıp 'Üyeleri Yönet' diyerek "
+                    f"Service Account e-postasını ({sa_email}) 'İçerik Yöneticisi' olarak ekleyin.\n"
+                    f"(Veya Ortak Drive kullanmak istemiyorsanız Drive Ayarları'ndan 'Ortak Drive ID' kutusunu tamamen boşaltıp kaydedin.)"
+                )
+            raise
 
     # ------------------------------------------------------------- Real-time Worker
     def _start_worker(self) -> None:
@@ -359,10 +412,7 @@ class CorporateGDriveSync:
 
                     # Check if image already exists in Visual_Vault
                     q_img = f"name = '{img_drive_filename}' and '{visual_vault_folder_id}' in parents and trashed = false"
-                    res_img = service.files().list(
-                        q=q_img, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True
-                    ).execute()
-                    files_img = res_img.get("files", [])
+                    files_img = self._drive_list(service, q=q_img, fields="files(id)")
                     if files_img:
                         img_drive_id = files_img[0]["id"]
                     else:
@@ -492,8 +542,7 @@ class CorporateGDriveSync:
                 resumable=False,
             )
             q = f"name = 'team_policy.json' and '{root_id}' in parents and trashed = false"
-            res = service.files().list(q=q, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            files = res.get("files", [])
+            files = self._drive_list(service, q=q, fields="files(id)")
             if files:
                 service.files().update(
                     fileId=files[0]["id"],
@@ -523,41 +572,32 @@ class CorporateGDriveSync:
         # 1. Pull team_policy.json
         try:
             q_pol = f"name = 'team_policy.json' and '{root_id}' in parents and trashed = false"
-            pol_res = service.files().list(q=q_pol, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            pol_files = pol_res.get("files", [])
+            pol_files = self._drive_list(service, q=q_pol, fields="files(id)")
             if pol_files:
                 content_bytes = service.files().get_media(fileId=pol_files[0]["id"], supportsAllDrives=True).execute()
                 pol_dict = json.loads(content_bytes.decode("utf-8"))
                 self.lib.import_company_policy_dict(pol_dict)
                 synced_policy = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Policy pull warning: {e}")
 
         # 2. Locate Visual_Vault folder on Drive (if it exists)
         visual_vault_folder_id = None
         try:
             q_vf = f"name = 'Visual_Vault' and '{root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            vf_res = service.files().list(q=q_vf, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            vf_files = vf_res.get("files", [])
+            vf_files = self._drive_list(service, q=q_vf, fields="files(id)")
             if vf_files:
                 visual_vault_folder_id = vf_files[0]["id"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Visual vault locate warning: {e}")
 
         # 3. Pull Prompts folder
         try:
             q_pf = f"name = 'Prompts' and '{root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            pf_res = service.files().list(q=q_pf, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            pf_files = pf_res.get("files", [])
+            pf_files = self._drive_list(service, q=q_pf, fields="files(id)")
             if pf_files:
                 p_folder_id = pf_files[0]["id"]
-                p_list = service.files().list(
-                    q=f"'{p_folder_id}' in parents and trashed = false",
-                    fields="files(id, name)",
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True,
-                    pageSize=1000,
-                ).execute().get("files", [])
+                p_list = self._drive_list(service, q=f"'{p_folder_id}' in parents and trashed = false", fields="files(id, name)")
                 for f in p_list:
                     if f["name"].endswith(".json"):
                         try:
@@ -575,10 +615,7 @@ class CorporateGDriveSync:
                                 if not local_img.exists() and visual_vault_folder_id:
                                     img_fn = pdata.get("image_filename") or f"{img_hash}.png"
                                     q_find_img = f"name = '{img_fn}' and '{visual_vault_folder_id}' in parents and trashed = false"
-                                    img_search = service.files().list(
-                                        q=q_find_img, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True
-                                    ).execute()
-                                    found_imgs = img_search.get("files", [])
+                                    found_imgs = self._drive_list(service, q=q_find_img, fields="files(id)")
                                     if found_imgs:
                                         img_bytes = service.files().get_media(fileId=found_imgs[0]["id"], supportsAllDrives=True).execute()
                                         local_img.write_bytes(img_bytes)
@@ -601,23 +638,16 @@ class CorporateGDriveSync:
                             synced_prompts += 1
                         except Exception as e:
                             self._stats["last_error"] = f"Prompt çekme hatası ({f.get('name')}): {e}"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Prompts pull warning: {e}")
 
         # 4. Pull Gems_and_Skills folder
         try:
             q_gf = f"name = 'Gems_and_Skills' and '{root_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            gf_res = service.files().list(q=q_gf, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            gf_files = gf_res.get("files", [])
+            gf_files = self._drive_list(service, q=q_gf, fields="files(id)")
             if gf_files:
                 g_folder_id = gf_files[0]["id"]
-                g_list = service.files().list(
-                    q=f"'{g_folder_id}' in parents and trashed = false",
-                    fields="files(id, name)",
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True,
-                    pageSize=1000,
-                ).execute().get("files", [])
+                g_list = self._drive_list(service, q=f"'{g_folder_id}' in parents and trashed = false", fields="files(id, name)")
                 for f in g_list:
                     if f["name"].endswith(".json"):
                         try:
@@ -627,8 +657,8 @@ class CorporateGDriveSync:
                             synced_entities += 1
                         except Exception as e:
                             self._stats["last_error"] = f"Gem çekme hatası ({f.get('name')}): {e}"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Gems pull warning: {e}")
 
         return {
             "ok": True,
